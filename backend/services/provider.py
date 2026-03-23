@@ -63,6 +63,22 @@ async def get_balance(address: str) -> float:
     return wei / 1e18
 
 
+async def eth_call(to: str, data: str) -> str:
+    """
+    Execute an eth_call (read-only contract interaction) and return the raw
+    hex result string.
+
+    Args:
+        to: Contract address (0x-prefixed).
+        data: ABI-encoded call data (0x-prefixed).
+
+    Returns:
+        Hex string result from the contract.
+    """
+    result = await _rpc_call("eth_call", [{"to": to, "data": data}, "latest"])
+    return result
+
+
 async def get_block_number() -> int:
     """Get the latest block number."""
     result = await _rpc_call("eth_blockNumber")

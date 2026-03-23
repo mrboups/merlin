@@ -11,15 +11,12 @@ POST /logout             — client-side only; JWT is stateless, this is a no-op
 
 Challenge storage
 -----------------
-Challenges are stored in a module-level dict keyed by a random session_id.
-Each entry has a 5-minute TTL enforced at read time.  For production with
-multiple replicas this should be replaced by Redis or Firestore with a TTL.
+Challenges are stored in Firestore via ``db.challenges`` with a 5-minute TTL.
+Each challenge is deleted on first read (one-time use).
 """
 
 import json
 import secrets
-import time
-from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -45,6 +42,7 @@ from auth.webauthn import (
     verify_authentication,
     verify_registration,
 )
+from db.challenges import get_challenge, store_challenge
 from db.users import (
     create_user,
     get_credential,
@@ -55,34 +53,6 @@ from db.users import (
 )
 
 router = APIRouter()
-
-# ---------------------------------------------------------------------------
-# In-memory challenge store
-# ---------------------------------------------------------------------------
-
-# Maps session_id -> (challenge_bytes, expiry_unix_timestamp)
-_challenges: dict[str, tuple[bytes, float]] = {}
-CHALLENGE_TTL: int = 300  # 5 minutes
-
-
-def _store_challenge(session_id: str, challenge: bytes) -> None:
-    _challenges[session_id] = (challenge, time.monotonic() + CHALLENGE_TTL)
-
-
-def _pop_challenge(session_id: str) -> Optional[bytes]:
-    """
-    Retrieve and delete the challenge for session_id.
-
-    Returns None if the session_id is unknown or the challenge has expired.
-    Pops on retrieval so each challenge can only be used once.
-    """
-    entry = _challenges.pop(session_id, None)
-    if entry is None:
-        return None
-    challenge, expiry = entry
-    if time.monotonic() > expiry:
-        return None
-    return challenge
 
 
 # ---------------------------------------------------------------------------
@@ -110,7 +80,7 @@ async def register_begin(body: RegisterBeginRequest) -> RegisterBeginResponse:
     )
 
     session_id = secrets.token_urlsafe(32)
-    _store_challenge(session_id, challenge)
+    await store_challenge(session_id, challenge, {"username": body.username})
 
     # options_to_json returns a JSON string; parse it back to dict so
     # FastAPI can serialise it cleanly inside the response envelope.
@@ -129,7 +99,12 @@ async def register_begin(body: RegisterBeginRequest) -> RegisterBeginResponse:
     ),
 )
 async def register_complete(body: RegisterCompleteRequest) -> RegisterCompleteResponse:
-    challenge = _pop_challenge(body.session_id)
+    result = await get_challenge(body.session_id)
+    if result is None:
+        challenge = None
+    else:
+        challenge, _user_data = result
+
     if challenge is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -194,7 +169,7 @@ async def login_begin(body: LoginBeginRequest) -> LoginBeginResponse:
     options, challenge = create_authentication_options(credentials=None)
 
     session_id = secrets.token_urlsafe(32)
-    _store_challenge(session_id, challenge)
+    await store_challenge(session_id, challenge)
 
     options_dict = json.loads(serialise_options(options))
 
@@ -211,7 +186,12 @@ async def login_begin(body: LoginBeginRequest) -> LoginBeginResponse:
     ),
 )
 async def login_complete(body: LoginCompleteRequest) -> LoginCompleteResponse:
-    challenge = _pop_challenge(body.session_id)
+    result = await get_challenge(body.session_id)
+    if result is None:
+        challenge = None
+    else:
+        challenge, _user_data = result
+
     if challenge is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
