@@ -8,3 +8,10 @@ coverage/
 .turbo/
 sources/
 .claude/
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+__pycache__/
+*.pyc
+backend/.venv/
+.firebase/
