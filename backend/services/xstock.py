@@ -81,7 +81,7 @@ XSTOCK_REGISTRY: list[dict] = [
     {"symbol": "xOKLO", "xstocks_ticker": "OKLOx", "name": "Oklo", "ticker": "OKLO", "type": "stock", "address": "0x4b0ee7c047d43ca403239f28f42115bedb7c0076"},
     {"symbol": "xIBM", "xstocks_ticker": "IBMx", "name": "IBM", "ticker": "IBM", "type": "stock", "address": "0xd9913208647671fe0f48f7f260076b2c6f310aac"},
     {"symbol": "xCSCO", "xstocks_ticker": "CSCOx", "name": "Cisco", "ticker": "CSCO", "type": "stock", "address": "0x053c784cd87b74f42e0c089f98643e79c1a3ff16"},
-    {"symbol": "xBRKB", "xstocks_ticker": "BRKBx", "name": "Berkshire Hathaway", "ticker": "BRKB", "type": "stock", "address": "0x12992613fdd35abe95dec5a4964331b1ee23b50d"},
+    {"symbol": "xBRKB", "xstocks_ticker": "BRK.Bx", "name": "Berkshire Hathaway", "ticker": "BRKB", "type": "stock", "address": "0x12992613fdd35abe95dec5a4964331b1ee23b50d"},
     {"symbol": "xPG", "xstocks_ticker": "PGx", "name": "Procter & Gamble", "ticker": "PG", "type": "stock", "address": "0xa90424d5d3e770e8644103ab503ed775dd1318fd"},
     {"symbol": "xPM", "xstocks_ticker": "PMx", "name": "Philip Morris", "ticker": "PM", "type": "stock", "address": "0x02a6c1789c3b4fdb1a7a3dfa39f90e5d3c94f4f9"},
     {"symbol": "xTMUS", "xstocks_ticker": "TMUSx", "name": "T-Mobile", "ticker": "TMUS", "type": "stock", "address": "0x68f3ddee8bae33691e7cd0372984fd857e842760"},
@@ -120,6 +120,26 @@ XSTOCK_REGISTRY: list[dict] = [
     {"symbol": "xIWM", "xstocks_ticker": "IWMx", "name": "Russell 2000 ETF", "ticker": "IWM", "type": "etf", "address": "0xdadfb355c6110eda0908740d52c834d6c2bcddc7"},
     {"symbol": "xVTI", "xstocks_ticker": "VTIx", "name": "Vanguard Total Stock Market", "ticker": "VTI", "type": "etf", "address": "0xbd730e618bcd88c82ddee52e10275cf2f88a4777"},
     {"symbol": "xTQQQ", "xstocks_ticker": "TQQQx", "name": "ProShares UltraPro QQQ", "ticker": "TQQQ", "type": "etf", "address": "0xfdddb57878ef9d6f681ec4381dcb626b9e69ac86"},
+    {"symbol": "xIJR", "xstocks_ticker": "IJRx", "name": "S&P Small Cap ETF", "ticker": "IJR", "type": "etf", "address": "0xaa28cb97d7f7e172f54dee950743886d2d65447d"},
+    {"symbol": "xIEMG", "xstocks_ticker": "IEMGx", "name": "Core MSCI Emerging Markets", "ticker": "IEMG", "type": "etf", "address": "0x6a668332825450acd2e449372057d31b3de16a1e"},
+    {"symbol": "xSCHF", "xstocks_ticker": "SCHFx", "name": "Schwab International Equity", "ticker": "SCHF", "type": "etf", "address": "0xf6d87e523512704c29e9b7ca3e9e6226bdce3ea1"},
+    {"symbol": "xVT", "xstocks_ticker": "VTx", "name": "Vanguard Total World", "ticker": "VT", "type": "etf", "address": "0x6d5edeebbc6a4099eb8bb289eb3b80d799f7b28c"},
+
+    # ── Commodities & Alternatives ─────────────────────────────────────────
+    {"symbol": "xPPLT", "xstocks_ticker": "PPLTx", "name": "Platinum ETF", "ticker": "PPLT", "type": "commodity_etf", "address": "0x8e9e4a8d7f1c65dcb42d9103832b27e75946055d"},
+    {"symbol": "xPALL", "xstocks_ticker": "PALLx", "name": "Palladium ETF", "ticker": "PALL", "type": "commodity_etf", "address": "0x05473cea3774d898c7b6dda21e1876d6bca7277b"},
+    {"symbol": "xCOPX", "xstocks_ticker": "COPXx", "name": "Global X Copper Miners", "ticker": "COPX", "type": "commodity_etf", "address": "0x89bab39d627a9e34f0dc782c53457e80ee8fb9d9"},
+
+    # ── Additional Stocks ──────────────────────────────────────────────────
+    {"symbol": "xAMBR", "xstocks_ticker": "AMBRx", "name": "Amber", "ticker": "AMBR", "type": "stock", "address": "0x2f9a35ab5ddfbc49927bfdeab98a86c53dc6e763"},
+    {"symbol": "xBTGO", "xstocks_ticker": "BTGOx", "name": "Bitgo", "ticker": "BTGO", "type": "stock", "address": "0x60ae7d760a1c7b528c0384bc945fadf1438f47a5"},
+    {"symbol": "xBMNR", "xstocks_ticker": "BMNRx", "name": "Bitmine", "ticker": "BMNR", "type": "stock", "address": "0xaeb681b69e5094e04d11bcef51a71358a374c3ed"},
+    {"symbol": "xKRAQ", "xstocks_ticker": "KRAQx", "name": "KRAQ", "ticker": "KRAQ", "type": "stock", "address": "0x0ebe5fad0998765187fc695b75d4115c27c953a1"},
+    {"symbol": "xSTRC", "xstocks_ticker": "STRCx", "name": "Strategy PP Variable", "ticker": "STRC", "type": "stock", "address": "0x1aad217b8f78dba5e6693460e8470f8b1a3977f3"},
+    {"symbol": "xTBLL", "xstocks_ticker": "TBLLx", "name": "TBLL", "ticker": "TBLL", "type": "stock", "address": "0x4cbf89ed7bb30b8a860fa86d3c96e9c72931299b"},
+    {"symbol": "xOPEN", "xstocks_ticker": "OPENx", "name": "OPEN", "ticker": "OPEN", "type": "stock", "address": "0xbee6b69345f376598fe16abd5592c6f844825e66"},
+    {"symbol": "xDFDV", "xstocks_ticker": "DFDVx", "name": "DFDV", "ticker": "DFDV", "type": "stock", "address": "0x521860bb5df5468358875266b89bfe90d990c6e7"},
+    {"symbol": "xCRCL", "xstocks_ticker": "CRCLx", "name": "Circle", "ticker": "CRCL", "type": "stock", "address": "0xfebded1b0986a8ee107f5ab1a1c5a813491deceb"},
 ]
 
 # Legacy ticker aliases (e.g. "FB" -> "META", "GOOG" -> "GOOGL")
