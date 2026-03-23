@@ -90,14 +90,14 @@ All three paths produce a standard Ethereum EOA that works identically with the 
 ### Frontend
 | Component | Technology | Source |
 |-----------|-----------|--------|
-| Framework | Next.js 15 (App Router, static export) | Adapted from FutureWallet, Privy stripped |
+| Framework | Next.js 15 (App Router, static export) | Adapted from FutureWallet |
 | UI library | shadcn/ui + Radix UI | Adapted from FutureWallet |
 | Styling | Tailwind CSS 3.4 | Adapted from FutureWallet |
 | State | TanStack Query (server state) | Adapted from FutureWallet |
 | Icons | lucide-react | Adapted from FutureWallet |
 | PWA | Service worker + manifest.json | Adapted from FutureWallet |
 
-**Status:** Frontend adapted from FutureWallet. Privy fully stripped, replaced with:
+**Status:** Frontend adapted from FutureWallet. Auth replaced with:
 - Passkey/WebAuthn authentication (SimpleWebAuthn)
 - BIP-39 seed generation + Scrypt/AES encryption (Ambire keystore pattern)
 - BIP-44 key derivation for Ethereum
@@ -244,4 +244,4 @@ Everything is either:
 - **Open source npm packages** (ambire-common, kohaku) — can fork if needed
 - **Standard Ethereum infra** (EIP-7702, ERC-4337, EntryPoint) — no proprietary APIs
 - **Self-hostable** (bundler, paymaster relay) — no mandatory third-party services
-- **No Privy, no ZeroDev, no Dynamic, no Alchemy** — pure Ethereum-native stack
+- **No third-party auth providers, no ZeroDev, no Dynamic** — pure Ethereum-native stack

@@ -40,7 +40,7 @@ Merlin is a privacy-preserving non-custodial wallet for Ethereum — an optimize
 - **LLM**: OpenAI (primary — function calling for intent parsing), Grok (social sentiment)
 - **Database**: Firestore (real-time sync, security rules)
 
-### Wallet Infrastructure (Kohaku-based, no Privy)
+### Wallet Infrastructure (Kohaku-based)
 - **Seed generation**: BIP-39 mnemonic via Kohaku
 - **Key derivation**: BIP-32/BIP-44 (ETH) + custom paths (Railgun spending/viewing keys)
 - **Transaction signing**: Kohaku TxSigner (Ethers v6 / Viem v2 adapters)
@@ -140,7 +140,7 @@ Agent definitions live in `agents/`:
 | Kohaku Expert | `agents/kohaku-expert.md` | Kohaku SDK — Railgun accounts, Privacy Pools, key derivation, ZK proofs, post-quantum |
 | Ambire 7702 | `agents/ambire-7702.md` | EIP-7702 delegation, AmbirePaymaster (gas in USDC), AccountOp, keystore encryption, broadcast modes |
 | Passkey Auth | `agents/passkey-auth.md` | WebAuthn passkey creation/login, seed encryption, session management, recovery flows |
-| Frontend Adapter | `agents/frontend-adapter.md` | Adapting FutureWallet Next.js frontend — replacing Privy, adding privacy modes, wallet integration |
+| Frontend Adapter | `agents/frontend-adapter.md` | Next.js frontend — passkey auth, privacy modes, wallet integration |
 | xStock Resolver | `agents/xstock-resolver.md` | Fuzzy matching of user input to xStock tokens (company names, tickers, partial matches) |
 | Trade Execution | `agents/trade-execution.md` | 6-step trade pipeline: quote → simulate → policy → execute → confirm → persist |
 | Persona Engine | `agents/persona-engine.md` | Modular AI persona system — built-in + custom trading strategies |
@@ -235,7 +235,7 @@ Merlin has **9 registered project agents**. These are integrated Claude Code age
 | `kohaku-expert` | Kohaku SDK, Railgun, Privacy Pools, key derivation, ZK proofs, post-quantum | Any privacy protocol work, account creation, Kohaku interfaces |
 | `ambire-7702-wallet` | EIP-7702, AmbirePaymaster, AccountOp, keystore, gas estimation, broadcast modes | Transaction building, gasless in USDC, 7702 delegation, seed encryption |
 | `passkey-auth` | WebAuthn, passkey creation/login, seed encryption, session management, recovery | Auth flows, account onboarding, lock/unlock, credential storage |
-| `frontend-adapter` | Next.js frontend, replacing Privy, privacy modes, component adaptation | Any frontend/UI work, page modifications, provider changes |
+| `frontend-adapter` | Next.js frontend, passkey auth, privacy modes, component adaptation | Any frontend/UI work, page modifications, provider changes |
 | `xstock-resolver` | xStock token mapping, fuzzy matching, company name → token resolution | Token identification, trade intent parsing, asset lookup |
 | `trade-executor` | 6-step trade pipeline, Uniswap V3, quoting, simulation, execution | Trade execution, swap routing, on-chain confirmation |
 | `persona-engine` | AI personas, trading strategies, custom persona creation, operating modes | Persona logic, strategy configs, memory isolation, social intelligence |

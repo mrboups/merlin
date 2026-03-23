@@ -6,7 +6,7 @@ Merlin is a privacy-preserving non-custodial wallet for Ethereum, built on Kohak
 
 ## Core Decisions
 
-### Wallet Infrastructure: Kohaku-based (no Privy)
+### Wallet Infrastructure: Kohaku-based
 
 We use Kohaku's wallet infrastructure directly:
 - **Seed generation**: BIP-39 mnemonic (24 words) via `@scure/bip39`
@@ -19,7 +19,7 @@ We use Kohaku's wallet infrastructure directly:
 
 - **Passkey-only** for new account creation (WebAuthn / platform authenticator)
 - **Seed phrase import** for existing wallet users (future)
-- **No email/password, no social login, no Privy**
+- **No email/password, no social login, no third-party auth**
 
 ### Tech Stack
 

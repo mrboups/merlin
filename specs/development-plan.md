@@ -23,7 +23,7 @@ Phase 7 (Production Hardening)    ░░░░░░░░░░ Not started
 - [x] Artifact Registry: `merlin-docker`
 - [x] Secret Manager: all secrets provisioned
 - [x] Cloud Run: `merlin-api` deployed
-- [x] Frontend: copied from FutureWallet, stripped Privy, renamed to Merlin
+- [x] Frontend: adapted from FutureWallet, passkey auth, renamed to Merlin
 - [x] Backend: FastAPI skeleton with Dockerfile
 - [x] Firebase config: `firebase.json` with Cloud Run rewrite
 - [x] Firestore rules: user-scoped read/write
