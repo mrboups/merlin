@@ -1,0 +1,65 @@
+{
+  "name": "merlin",
+  "version": "0.1.0",
+  "description": "Privacy-preserving multi-chain wallet SDK — unified privacy layer combining Kohaku privacy protocols with modular wallet management",
+  "type": "module",
+  "private": true,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./wallet": {
+      "types": "./dist/modules/wallet/index.d.ts",
+      "import": "./dist/modules/wallet/index.js"
+    },
+    "./privacy": {
+      "types": "./dist/modules/privacy/index.d.ts",
+      "import": "./dist/modules/privacy/index.js"
+    },
+    "./provider": {
+      "types": "./dist/modules/provider/index.d.ts",
+      "import": "./dist/modules/provider/index.js"
+    },
+    "./transaction": {
+      "types": "./dist/modules/transaction/index.d.ts",
+      "import": "./dist/modules/transaction/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "ethers": "^6.15.0",
+    "viem": "^2.45.0",
+    "@noble/hashes": "^1.8.0",
+    "@noble/ciphers": "^1.0.0",
+    "@scure/base": "^2.0.0",
+    "ethereum-cryptography": "^3.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.1.0",
+    "typescript": "^5.9.2",
+    "tsup": "^8.5.0",
+    "vitest": "^2.0.0",
+    "eslint": "^9.9.0",
+    "@eslint/js": "^9.9.0",
+    "typescript-eslint": "^8.3.0",
+    "dotenv": "^17.2.1"
+  },
+  "sideEffects": false,
+  "license": "MIT"
+}
