@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiClient } from "@/lib/api";
 
 import Link from "next/link";
@@ -14,10 +14,10 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, LogOut, Moon, Sun, Wallet, Shield, Copy, Check, KeyRound, Volume2, VolumeX, Repeat, Sparkles } from "lucide-react";
+import { ArrowLeft, LogOut, Moon, Sun, Wallet, Shield, Copy, Check, KeyRound, Volume2, VolumeX, Repeat, Sparkles, AlertTriangle, X, Download, Upload } from "lucide-react";
 
 export default function SettingsPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, importSeed, exportSeed } = useAuth();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [copied, setCopied] = useState(false);
   const [riskLevel, setRiskLevel] = useState<"conservative" | "moderate" | "aggressive">("moderate");
@@ -29,6 +29,23 @@ export default function SettingsPage() {
   const [tokenProvider, setTokenProvider] = useState<"xstocks" | "ondo">("xstocks");
   const [providerSaving, setProviderSaving] = useState(false);
   const [preferredModel, setPreferredModel] = useState<string>("claude");
+
+  // --- Export seed modal state ---
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportedMnemonic, setExportedMnemonic] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportLoading, setExportLoading] = useState(false);
+  const [exportCopied, setExportCopied] = useState(false);
+
+  // --- Import seed modal state ---
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importMnemonic, setImportMnemonic] = useState("");
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importSuccess, setImportSuccess] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+
+  // Ref used to auto-focus the import textarea when the modal opens.
+  const importTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("merlin_voice_enabled");
@@ -116,6 +133,77 @@ export default function SettingsPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // ---------------------------------------------------------------------------
+  // Export seed handlers
+  // ---------------------------------------------------------------------------
+
+  const openExportModal = async () => {
+    setExportedMnemonic(null);
+    setExportError(null);
+    setExportCopied(false);
+    setExportLoading(true);
+    setShowExportModal(true);
+    try {
+      const mnemonic = await exportSeed();
+      setExportedMnemonic(mnemonic);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : "Failed to export seed phrase");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const closeExportModal = () => {
+    // Clear the plaintext mnemonic from state as soon as the modal closes.
+    setExportedMnemonic(null);
+    setExportError(null);
+    setExportCopied(false);
+    setShowExportModal(false);
+  };
+
+  const copyMnemonic = async () => {
+    if (!exportedMnemonic) return;
+    await navigator.clipboard.writeText(exportedMnemonic);
+    setExportCopied(true);
+    setTimeout(() => setExportCopied(false), 2000);
+  };
+
+  // ---------------------------------------------------------------------------
+  // Import seed handlers
+  // ---------------------------------------------------------------------------
+
+  const openImportModal = () => {
+    setImportMnemonic("");
+    setImportError(null);
+    setImportSuccess(false);
+    setShowImportModal(true);
+    // Focus the textarea after the modal renders.
+    setTimeout(() => importTextareaRef.current?.focus(), 50);
+  };
+
+  const closeImportModal = () => {
+    // Clear state — the textarea may contain the user's mnemonic.
+    setImportMnemonic("");
+    setImportError(null);
+    setImportSuccess(false);
+    setShowImportModal(false);
+  };
+
+  const handleImport = async () => {
+    setImportError(null);
+    setImportLoading(true);
+    try {
+      await importSeed(importMnemonic);
+      setImportSuccess(true);
+      // Clear the textarea now that the import is done.
+      setImportMnemonic("");
+    } catch (err) {
+      setImportError(err instanceof Error ? err.message : "Import failed — please try again");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
   const handleLogout = async () => {
     await logout();
     window.location.href = "/";
@@ -181,24 +269,239 @@ export default function SettingsPage() {
           <Card className="border-orange-500/30">
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <KeyRound className="h-5 w-5 text-orange-400" />
-                Seed Phrase
+                <Download className="h-5 w-5 text-orange-400" />
+                Seed Phrase Backup
               </CardTitle>
               <CardDescription>
-                Seed phrase backup will be available in a future update.
+                View and copy your 24-word recovery phrase. Store it somewhere safe — it is the only way to recover your wallet if you lose access to your passkey.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              <div className="flex items-start gap-2 rounded-md bg-orange-500/10 border border-orange-500/30 p-3 text-sm text-orange-300">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <p>Anyone who has your seed phrase can access your funds. Never share it with anyone.</p>
+              </div>
               <Button
                 variant="outline"
-                disabled
-                className="w-full"
+                className="w-full border-orange-500/40 hover:border-orange-500/70"
+                onClick={openExportModal}
               >
                 <KeyRound className="mr-2 h-4 w-4 text-orange-400" />
-                Export Seed Phrase
+                Show Seed Phrase
               </Button>
             </CardContent>
           </Card>
+
+          {/* Import Seed Phrase */}
+          <Card className="border-yellow-500/30">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Upload className="h-5 w-5 text-yellow-400" />
+                Import Seed Phrase
+              </CardTitle>
+              <CardDescription>
+                Replace your current wallet with a different 12- or 24-word BIP-39 seed phrase. Your new address will be derived from the imported phrase.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-start gap-2 rounded-md bg-yellow-500/10 border border-yellow-500/30 p-3 text-sm text-yellow-300">
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <p>This will permanently replace your current seed phrase and wallet address. Make sure you have backed up your existing phrase first.</p>
+              </div>
+              <Button
+                variant="outline"
+                className="w-full border-yellow-500/40 hover:border-yellow-500/70"
+                onClick={openImportModal}
+              >
+                <Upload className="mr-2 h-4 w-4 text-yellow-400" />
+                Import Seed Phrase
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Export Seed Phrase Modal */}
+          {showExportModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+              <div className="relative w-full max-w-lg rounded-xl border bg-background shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="h-5 w-5 text-orange-400" />
+                    <h2 className="text-base font-semibold">Your Seed Phrase</h2>
+                  </div>
+                  <button
+                    onClick={closeExportModal}
+                    className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Close"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="px-6 py-5 space-y-4">
+                  {exportLoading && (
+                    <p className="text-sm text-muted-foreground text-center py-6">
+                      Decrypting seed phrase…
+                    </p>
+                  )}
+
+                  {exportError && (
+                    <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+                      <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                      <p>{exportError}</p>
+                    </div>
+                  )}
+
+                  {exportedMnemonic && (
+                    <>
+                      <div className="flex items-start gap-2 rounded-md bg-orange-500/10 border border-orange-500/30 p-3 text-sm text-orange-300">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <p>Write these words down and store them safely. Anyone with this phrase can access your wallet.</p>
+                      </div>
+
+                      {/* Word grid — 4 columns */}
+                      <div className="grid grid-cols-4 gap-2">
+                        {exportedMnemonic.split(" ").map((word, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1.5"
+                          >
+                            <span className="text-xs text-muted-foreground w-5 shrink-0 text-right">
+                              {i + 1}.
+                            </span>
+                            <span className="text-sm font-mono font-medium truncate">{word}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={copyMnemonic}
+                      >
+                        {exportCopied ? (
+                          <>
+                            <Check className="mr-2 h-4 w-4 text-green-400" />
+                            Copied
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy to Clipboard
+                          </>
+                        )}
+                      </Button>
+                    </>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="flex justify-end border-t px-6 py-4">
+                  <Button variant="outline" onClick={closeExportModal}>
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Import Seed Phrase Modal */}
+          {showImportModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+              <div className="relative w-full max-w-lg rounded-xl border bg-background shadow-2xl">
+                {/* Header */}
+                <div className="flex items-center justify-between border-b px-6 py-4">
+                  <div className="flex items-center gap-2">
+                    <Upload className="h-5 w-5 text-yellow-400" />
+                    <h2 className="text-base font-semibold">Import Seed Phrase</h2>
+                  </div>
+                  <button
+                    onClick={closeImportModal}
+                    className="rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label="Close"
+                    disabled={importLoading}
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="px-6 py-5 space-y-4">
+                  {importSuccess ? (
+                    <div className="space-y-4">
+                      <div className="flex items-start gap-2 rounded-md bg-green-500/10 border border-green-500/30 p-3 text-sm text-green-300">
+                        <Check className="h-4 w-4 mt-0.5 shrink-0" />
+                        <p>Seed phrase imported successfully. Your wallet address has been updated.</p>
+                      </div>
+                      <Button className="w-full" onClick={closeImportModal}>
+                        Done
+                      </Button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-start gap-2 rounded-md bg-yellow-500/10 border border-yellow-500/30 p-3 text-sm text-yellow-300">
+                        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                        <p>This will replace your current seed phrase. Ensure your existing phrase is backed up before proceeding.</p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <label className="text-sm font-medium" htmlFor="import-mnemonic">
+                          Enter your 12- or 24-word seed phrase
+                        </label>
+                        <textarea
+                          id="import-mnemonic"
+                          ref={importTextareaRef}
+                          value={importMnemonic}
+                          onChange={(e) => {
+                            setImportMnemonic(e.target.value);
+                            setImportError(null);
+                          }}
+                          placeholder="word1 word2 word3 …"
+                          rows={4}
+                          disabled={importLoading}
+                          className="w-full rounded-md border bg-background px-3 py-2 text-sm font-mono placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50 resize-none"
+                          spellCheck={false}
+                          autoComplete="off"
+                          autoCorrect="off"
+                          autoCapitalize="off"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Separate words with spaces. The phrase is validated before import.
+                        </p>
+                      </div>
+
+                      {importError && (
+                        <div className="flex items-start gap-2 rounded-md bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+                          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                          <p>{importError}</p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-3">
+                        <Button
+                          variant="outline"
+                          className="flex-1"
+                          onClick={closeImportModal}
+                          disabled={importLoading}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          className="flex-1"
+                          onClick={handleImport}
+                          disabled={importLoading || importMnemonic.trim().length === 0}
+                        >
+                          {importLoading ? "Importing…" : "Import Phrase"}
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Theme */}
           <Card>

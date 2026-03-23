@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { startRegistration, startAuthentication } from "@simplewebauthn/browser";
 import { AuthContext, type AuthUser } from "@/lib/auth";
 import { apiClient } from "@/lib/api";
 import { API_URL } from "@/lib/constants";
-import { createMnemonic, mnemonicToSeed } from "@/lib/crypto/seed";
-import { encrypt } from "@/lib/crypto/keystore";
+import { createMnemonic, isValidMnemonic, mnemonicToSeed, normaliseMnemonic } from "@/lib/crypto/seed";
+import { encrypt, decrypt } from "@/lib/crypto/keystore";
 import { deriveEncryptionSecret } from "@/lib/crypto/session-keys";
 import { deriveEthKey } from "@/lib/crypto/keys";
 import { storeSeed, getSeed } from "@/lib/storage/secure-store";
@@ -45,6 +45,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [walletAddress, setWalletAddress] = useState<string | null>(null);
   const [walletReady, setWalletReady] = useState(false);
+
+  // Encryption secret derived from the WebAuthn credential ID during signup or
+  // login. Stored in a ref (memory-only, never written to localStorage or
+  // IndexedDB) so that importSeed and exportSeed can use it within the same
+  // session without requiring an additional passkey ceremony.
+  //
+  // This ref is populated in signup (from the registration credential) and in
+  // login (from the authentication credential). It is cleared on logout.
+  //
+  // If the user refreshes the page or the ref is null, importSeed/exportSeed
+  // will require the user to log in again — this is intentional and correct.
+  const encryptionSecretRef = useRef<string | null>(null);
 
   // Load stored session on mount and restore wallet state.
   useEffect(() => {
@@ -136,6 +148,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const mnemonic = createMnemonic();
     const credentialIdBuffer = base64urlToBuffer(credential.rawId);
     const encryptionSecret = deriveEncryptionSecret(credentialIdBuffer);
+
+    // Hold the secret in memory for the lifetime of this session so that
+    // importSeed / exportSeed can operate without requiring a new ceremony.
+    encryptionSecretRef.current = encryptionSecret;
+
     const encryptedBlob = await encrypt(mnemonic, encryptionSecret);
     await storeSeed(completeData.user_id, encryptedBlob);
 
@@ -214,6 +231,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const credentialIdBuffer = base64urlToBuffer(credential.rawId);
         const encryptionSecret = deriveEncryptionSecret(credentialIdBuffer);
+
+        // Hold the secret in memory for the lifetime of this session so that
+        // importSeed / exportSeed can operate without requiring a new ceremony.
+        encryptionSecretRef.current = encryptionSecret;
+
         const walletState = await walletManager.unlock(encryptedBlob, encryptionSecret);
         address = walletState.address;
         setWalletReady(true);
@@ -236,6 +258,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Zero and clear the private key from memory first.
     walletManager.lock();
 
+    // Clear the in-memory encryption secret — it must not outlive the session.
+    encryptionSecretRef.current = null;
+
     // Clear persisted session.
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
@@ -257,6 +282,105 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const getAccessToken = useCallback(async () => {
     return token;
   }, [token]);
+
+  // ---------------------------------------------------------------------------
+  // importSeed — replace stored seed with a user-supplied BIP-39 mnemonic
+  // ---------------------------------------------------------------------------
+
+  const importSeed = useCallback(async (mnemonic: string) => {
+    if (!user) {
+      throw new Error("Must be authenticated to import a seed phrase");
+    }
+
+    // Normalise first so validation isn't tripped up by extra whitespace.
+    const normalised = normaliseMnemonic(mnemonic);
+
+    if (!isValidMnemonic(normalised)) {
+      throw new Error("Invalid seed phrase — check your words and try again");
+    }
+
+    // The encryption secret must be in memory from the most recent login or
+    // signup ceremony. If it is null the user has refreshed the page without
+    // logging in again (the passkey assertion is needed to re-derive it).
+    const encryptionSecret = encryptionSecretRef.current;
+    if (!encryptionSecret) {
+      throw new Error(
+        "Session key not available — please log out and log in again before importing a seed phrase"
+      );
+    }
+
+    // Encrypt the imported seed with the same key that protects the current
+    // seed. storeSeed uses put semantics — any existing blob is overwritten.
+    const encryptedBlob = await encrypt(normalised, encryptionSecret);
+    await storeSeed(user.id, encryptedBlob);
+
+    // Derive the new primary ETH address from the imported seed.
+    const seed = mnemonicToSeed(normalised);
+    let newAddress = "";
+    try {
+      const keypair = deriveEthKey(seed, 0);
+      newAddress = keypair.address;
+      // The private key is only needed for address derivation here.
+      // Zero it — the wallet will be fully unlocked on the next login.
+      keypair.privateKey.fill(0);
+    } finally {
+      seed.fill(0);
+    }
+
+    // Persist the new address to the backend (non-blocking — recoverable on
+    // next login if the call fails).
+    fetch(`${API_URL}/auth/address`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ address: newAddress }),
+    }).catch((e) => {
+      console.warn("[Auth] Failed to sync imported address to backend:", e);
+    });
+
+    // Update local session with the new address.
+    saveSession(user.id, newAddress, token ?? "");
+
+    // Re-unlock the wallet with the imported seed so the private key is
+    // immediately available for transactions without requiring a re-login.
+    try {
+      await walletManager.unlock(encryptedBlob, encryptionSecret);
+      setWalletReady(true);
+    } catch (e) {
+      // Non-fatal — the wallet will unlock correctly on next login.
+      console.warn("[Auth] Failed to re-unlock wallet after seed import:", e);
+    }
+  }, [user, token, saveSession]);
+
+  // ---------------------------------------------------------------------------
+  // exportSeed — decrypt and return the stored BIP-39 mnemonic
+  // ---------------------------------------------------------------------------
+
+  const exportSeed = useCallback(async (): Promise<string> => {
+    if (!user) {
+      throw new Error("Must be authenticated to export the seed phrase");
+    }
+
+    // The encryption secret must be present in memory. If it is null the user
+    // has a page session but has not re-authenticated since the last refresh.
+    const encryptionSecret = encryptionSecretRef.current;
+    if (!encryptionSecret) {
+      throw new Error(
+        "Session key not available — please log out and log in again before exporting your seed phrase"
+      );
+    }
+
+    const blob = await getSeed(user.id);
+    if (!blob) {
+      throw new Error("No seed phrase stored for this account");
+    }
+
+    // decrypt() will throw "keystore: incorrect password" if the secret is wrong.
+    const mnemonic = await decrypt(blob, encryptionSecret);
+    return mnemonic;
+  }, [user]);
 
   // ---------------------------------------------------------------------------
   // executeSwap — sign and broadcast a swap using the in-memory private key
@@ -302,6 +426,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signup,
         logout,
         getAccessToken,
+        importSeed,
+        exportSeed,
         executeSwap,
       }}
     >

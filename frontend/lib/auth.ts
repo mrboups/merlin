@@ -19,6 +19,40 @@ export interface AuthContextType {
   logout: () => Promise<void>;
   getAccessToken: () => Promise<string | null>;
   /**
+   * Replace the current seed phrase with an imported BIP-39 mnemonic.
+   *
+   * Requires an active authenticated session (user must already be logged in
+   * via passkey). The mnemonic is validated, encrypted with the passkey-derived
+   * key held in memory from the most recent login/signup ceremony, stored in
+   * IndexedDB, and the re-derived ETH address is sent to the backend.
+   *
+   * Throws if:
+   *  - The user is not authenticated
+   *  - The mnemonic is not a valid BIP-39 phrase (12 or 24 words)
+   *  - The encryption secret is not available in memory (session expired —
+   *    user must log in again to refresh the in-memory key material)
+   *
+   * @param mnemonic  The 12- or 24-word BIP-39 mnemonic to import
+   */
+  importSeed: (mnemonic: string) => Promise<void>;
+  /**
+   * Decrypt and return the current seed phrase.
+   *
+   * Requires an active authenticated session AND the wallet to be unlocked
+   * (i.e. the encryption secret must be held in memory from the most recent
+   * login/signup ceremony). This is a sensitive operation — the caller is
+   * responsible for zeroing the returned string from memory as soon as the
+   * user dismisses the display.
+   *
+   * Throws if:
+   *  - The user is not authenticated
+   *  - The encryption secret is not in memory (session expired — re-authenticate)
+   *  - No seed blob is found in IndexedDB for this user
+   *
+   * @returns  The plaintext BIP-39 mnemonic string
+   */
+  exportSeed: () => Promise<string>;
+  /**
    * Execute a token swap using the wallet's private key.
    *
    * The wallet must be unlocked (walletReady === true) before calling this.
@@ -51,6 +85,12 @@ export const AuthContext = createContext<AuthContextType>({
   signup: async () => {},
   logout: async () => {},
   getAccessToken: async () => null,
+  importSeed: async () => {
+    throw new Error("AuthProvider not mounted");
+  },
+  exportSeed: async () => {
+    throw new Error("AuthProvider not mounted");
+  },
   executeSwap: async () => {
     throw new Error("AuthProvider not mounted");
   },
