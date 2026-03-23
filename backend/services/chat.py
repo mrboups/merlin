@@ -21,7 +21,14 @@ from openai import AsyncOpenAI
 from db.conversations import add_message, create_conversation, get_messages
 from db.trades import save_quoted_trade
 from services.guardrails import validate_trade
-from services.xstock import list_all_assets, resolve_token
+from services.uniswap import (
+    WETH,
+    get_quote as uniswap_get_quote,
+    get_token_decimals,
+    is_placeholder_address,
+    resolve_swap_addresses,
+)
+from services.xstock import CRYPTO_ASSETS, list_all_assets, resolve_token
 
 logger = logging.getLogger(__name__)
 
@@ -359,7 +366,60 @@ async def _handle_trade_intent(
             yield event
         return
 
-    # Guardrails passed — create a quoted trade record
+    # Guardrails passed — attempt to get a real Uniswap quote
+    uniswap_quote = None
+    quote_error = None
+    estimated_output = None
+    estimated_output_symbol = None
+
+    try:
+        # Determine swap pair: buying an asset means USDC -> asset,
+        # selling means asset -> USDC
+        _crypto_by_symbol = {a["symbol"].upper(): a for a in CRYPTO_ASSETS}
+
+        if side == "buy":
+            token_in_info = _crypto_by_symbol.get("USDC", {})
+            token_out_info = matched_token
+            token_in_sym = "USDC"
+            token_out_sym = symbol
+        else:
+            token_in_info = matched_token
+            token_out_info = _crypto_by_symbol.get("USDC", {})
+            token_in_sym = symbol
+            token_out_sym = "USDC"
+
+        addr_in, addr_out = resolve_swap_addresses(
+            token_in_sym, token_out_sym, token_in_info, token_out_info,
+        )
+
+        # Determine decimals for input token
+        decimals_in = await get_token_decimals(addr_in)
+        decimals_out = await get_token_decimals(addr_out)
+
+        # Convert amount to smallest unit
+        if amount_type == "usd":
+            amount_in_raw = int(amount * (10 ** decimals_in))
+        else:
+            amount_in_raw = int(amount * (10 ** decimals_in))
+
+        if amount_in_raw > 0:
+            uniswap_quote = await uniswap_get_quote(
+                token_in=addr_in,
+                token_out=addr_out,
+                amount_in=amount_in_raw,
+            )
+            if uniswap_quote and uniswap_quote["amount_out"] > 0:
+                estimated_output = uniswap_quote["amount_out"] / (10 ** decimals_out)
+                estimated_output_symbol = token_out_sym
+
+    except ValueError as e:
+        quote_error = str(e)
+        logger.info("Uniswap quote skipped: %s", e)
+    except Exception as e:
+        quote_error = f"Quote unavailable: {e}"
+        logger.warning("Uniswap quote failed: %s", e)
+
+    # Create a quoted trade record
     total_usd = amount if amount_type == "usd" else 0.0
     trade_id = await save_quoted_trade(
         user_id=user_id,
@@ -373,7 +433,7 @@ async def _handle_trade_intent(
         guardrail_result=guardrail_result,
     )
 
-    # Emit structured trade intent event
+    # Emit structured trade intent event with quote data
     trade_data = {
         "trade_id": trade_id,
         "side": side,
@@ -383,11 +443,17 @@ async def _handle_trade_intent(
         "amount_type": amount_type,
         "guardrails": guardrail_result,
     }
+    if estimated_output is not None:
+        trade_data["estimated_output"] = estimated_output
+        trade_data["estimated_output_symbol"] = estimated_output_symbol
+    if quote_error:
+        trade_data["quote_note"] = quote_error
+
     yield _sse({"type": "trade_intent", "data": trade_data})
 
     # Send result back to the model for a confirmation message
     amount_display = f"${amount:,.2f}" if amount_type == "usd" else f"{amount} tokens"
-    tool_result = json.dumps({
+    tool_result_data = {
         "success": True,
         "trade_id": trade_id,
         "side": side,
@@ -398,8 +464,27 @@ async def _handle_trade_intent(
         "amount_display": amount_display,
         "guardrails_passed": True,
         "status": "quoted",
-        "note": "Trade quoted — execution will be available once Uniswap integration is complete.",
-    })
+    }
+
+    if estimated_output is not None:
+        output_display = f"{estimated_output:.6f}".rstrip("0").rstrip(".")
+        tool_result_data["estimated_output"] = f"{output_display} {estimated_output_symbol}"
+        tool_result_data["note"] = (
+            f"Estimated to receive ~{output_display} {estimated_output_symbol}. "
+            "Ask the user to confirm before proceeding. "
+            "The frontend will handle signing and submission."
+        )
+    elif quote_error:
+        tool_result_data["note"] = (
+            f"Quote not available: {quote_error}. "
+            "The trade has been recorded but cannot be executed on-chain yet."
+        )
+    else:
+        tool_result_data["note"] = (
+            "Trade quoted. The frontend will handle signing and submission via /trade/quote."
+        )
+
+    tool_result = json.dumps(tool_result_data)
 
     async for event in _send_tool_result(
         client, user_id, conversation_id, history, call_id,

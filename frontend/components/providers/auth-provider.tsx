@@ -11,6 +11,7 @@ import { deriveEncryptionSecret } from "@/lib/crypto/session-keys";
 import { deriveEthKey } from "@/lib/crypto/keys";
 import { storeSeed, getSeed } from "@/lib/storage/secure-store";
 import { WalletManager } from "@/lib/wallet/wallet-manager";
+import { executeSwap as executeSwapCore, type SwapProgress } from "@/lib/wallet/swap";
 
 const STORAGE_KEY = "merlin_auth";
 
@@ -257,6 +258,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return token;
   }, [token]);
 
+  // ---------------------------------------------------------------------------
+  // executeSwap — sign and broadcast a swap using the in-memory private key
+  // ---------------------------------------------------------------------------
+
+  const executeSwap = useCallback(
+    async (
+      tokenIn: string,
+      tokenOut: string,
+      amount: number,
+      amountType: "usd" | "quantity",
+      onProgress: (progress: SwapProgress) => void,
+      slippage: number = 0.5
+    ): Promise<{ txHash: string; success: boolean }> => {
+      const privateKey = walletManager.getPrivateKey();
+      if (!privateKey) {
+        throw new Error(
+          "Wallet is locked — please re-authenticate before trading"
+        );
+      }
+      return executeSwapCore(
+        tokenIn,
+        tokenOut,
+        amount,
+        amountType,
+        privateKey,
+        onProgress,
+        slippage
+      );
+    },
+    [] // walletManager is a stable module-level singleton
+  );
+
   return (
     <AuthContext.Provider
       value={{
@@ -269,6 +302,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signup,
         logout,
         getAccessToken,
+        executeSwap,
       }}
     >
       {children}

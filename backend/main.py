@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from routers import auth, chat, portfolio, personas, social
+from routers import auth, chat, portfolio, personas, social, trade
 
 app = FastAPI(
     title="Merlin API",
@@ -22,6 +22,7 @@ app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(portfolio.router, prefix="/api/v1", tags=["portfolio"])
 app.include_router(personas.router, prefix="/api/v1", tags=["personas"])
 app.include_router(social.router, prefix="/api/v1", tags=["social"])
+app.include_router(trade.router, prefix="/api/v1", tags=["trade"])
 
 
 @app.get("/api/v1/health")
