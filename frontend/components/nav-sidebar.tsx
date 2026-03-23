@@ -135,7 +135,7 @@ export function NavSidebar() {
   }, []);
 
   const handleExportKey = useCallback(() => {
-    // Privy's exportWallet is triggered via their UI — navigate to settings
+    // Navigate to settings for seed phrase backup
     window.location.href = "/settings";
   }, []);
 
