@@ -1,13 +1,26 @@
 """
 Trade execution endpoints.
 
-POST /trade/quote        — get a swap quote with unsigned transaction data
-POST /trade/confirm      — confirm a trade was submitted on-chain
-GET  /trade/status/{id}  — check trade status
+POST /trade/quote           — get a swap quote with unsigned transaction data
+POST /trade/quote-gasless   — get a swap quote as a UserOperation (USDC gas via
+                              EIP-7702 + AmbirePaymaster + ERC-4337 bundler)
+POST /trade/confirm         — confirm a trade was submitted on-chain
+GET  /trade/status/{id}     — check trade status
 
 The backend is non-custodial: it builds unsigned transactions and returns
 them to the frontend.  The frontend signs with the user's private key,
 submits to the network, and calls /trade/confirm with the tx hash.
+
+Gasless mode (quote-gasless):
+  1. Backend builds batch calls [approve token_in → router, swap].
+  2. Wraps them in executeBySender() targeting AmbireAccount7702.
+  3. Assembles a PackedUserOperation (ERC-4337 v0.7).
+  4. Fetches a paymaster signature from the Ambire relay (gas in USDC).
+  5. Returns the unsigned UserOp to the frontend.
+  Frontend then:
+    a. Signs an EIP-7702 authorization if this is the first delegation.
+    b. Signs the UserOp hash with the EOA key.
+    c. Submits eth_sendUserOperation to the bundler URL.
 """
 
 from __future__ import annotations
@@ -22,6 +35,7 @@ from pydantic import BaseModel, Field
 
 from auth.dependencies import get_current_user
 from db.trades import save_quoted_trade, update_trade_status
+from services.eip7702 import AMBIRE_PAYMASTER, ERC4337_ENTRYPOINT, USDC, build_gasless_trade
 from services.guardrails import validate_trade
 from services.provider import _rpc_call
 from services.uniswap import (
@@ -195,6 +209,37 @@ class TradeStatusResponse(BaseModel):
     tx_hash: str
     symbol: str
     side: str
+
+
+class GaslessQuoteRequest(BaseModel):
+    token_in: str = Field(
+        ...,
+        description="Input token: 'ETH', 'USDC', or xStock symbol like 'xTSLA'",
+    )
+    token_out: str = Field(..., description="Output token: same format")
+    amount: float = Field(..., gt=0, description="Human-readable amount")
+    amount_type: str = Field("usd", description="'usd' or 'quantity'")
+    slippage: float = Field(
+        0.5, ge=0.01, le=50.0, description="Slippage tolerance in percent"
+    )
+    recipient: str = Field(
+        ..., description="User's EOA wallet address (sender of the UserOperation)"
+    )
+
+
+class GaslessQuoteResponse(BaseModel):
+    quote_id: str
+    token_in: dict
+    token_out: dict
+    amount_in: str          # Human-readable input amount
+    amount_out: str         # Human-readable expected output amount
+    user_operation: dict    # Full ERC-4337 v0.7 UserOperation (minus signature)
+    eip7702_auth: dict      # EIP-7702 authorization object for the frontend to sign
+    entrypoint: str         # EntryPoint contract address
+    bundler_url: str        # Submit signed UserOp to this URL
+    paymaster_mode: str     # "ambire" | "none"
+    gas_estimate_usdc: str  # Estimated gas cost in USDC (informational)
+    expires_at: str
 
 
 # ---------------------------------------------------------------------------
@@ -433,6 +478,272 @@ async def confirm_trade(
         "status": "pending",
         "message": "Trade submitted. Monitoring for on-chain confirmation.",
     }
+
+
+@router.post("/trade/quote-gasless", response_model=GaslessQuoteResponse)
+async def quote_gasless_trade(
+    body: GaslessQuoteRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """
+    Get a swap quote as a UserOperation that pays gas in USDC via EIP-7702 +
+    AmbirePaymaster + ERC-4337 bundler.
+
+    The response contains:
+      - user_operation: a fully-assembled ERC-4337 v0.7 UserOp (minus the
+        user's signature) ready for eth_sendUserOperation.
+      - eip7702_auth: the EIP-7702 authorization object the frontend must sign
+        if the EOA hasn't yet delegated to AmbireAccount7702.
+      - bundler_url: where to submit the signed UserOp.
+
+    The bundler will forward it to the EntryPoint, which calls the
+    AmbirePaymaster.  The paymaster pays ETH gas up-front from its EntryPoint
+    deposit; the user's USDC balance is debited by the AmbireAccount7702 fee
+    call that is included in the executeBySender batch.
+
+    Requires PIMLICO_API_KEY to be set in the environment.  Returns HTTP 503
+    if the bundler or paymaster relay is unavailable.
+    """
+    _cleanup_expired_quotes()
+
+    # ------------------------------------------------------------------
+    # 1. Resolve tokens
+    # ------------------------------------------------------------------
+    in_resolution = resolve_token(body.token_in)
+    out_resolution = resolve_token(body.token_out)
+
+    token_in_info = in_resolution.get("match")
+    token_out_info = out_resolution.get("match")
+
+    if not token_in_info:
+        raise HTTPException(400, detail=f"Could not resolve input token '{body.token_in}'.")
+    if not token_out_info:
+        raise HTTPException(400, detail=f"Could not resolve output token '{body.token_out}'.")
+
+    token_in_symbol = token_in_info["symbol"]
+    token_out_symbol = token_out_info["symbol"]
+
+    try:
+        addr_in, addr_out = resolve_swap_addresses(
+            token_in_symbol, token_out_symbol, token_in_info, token_out_info,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, detail=str(exc))
+
+    decimals_in = _get_decimals(token_in_symbol, token_in_info)
+    decimals_out = _get_decimals(token_out_symbol, token_out_info)
+
+    # ------------------------------------------------------------------
+    # 2. Convert human-readable amount to smallest unit
+    # ------------------------------------------------------------------
+    amount_in_raw = int(body.amount * (10 ** decimals_in))
+    if amount_in_raw <= 0:
+        raise HTTPException(
+            400,
+            detail="Computed input amount is zero. Check amount and token decimals.",
+        )
+
+    # ------------------------------------------------------------------
+    # 3. Guardrails
+    # ------------------------------------------------------------------
+    side = "buy" if body.token_out.upper() not in ("USDC", "USDT") else "sell"
+    asset_symbol = token_out_symbol if side == "buy" else token_in_symbol
+    intent = {
+        "side": side,
+        "asset": asset_symbol,
+        "resolved_symbol": asset_symbol,
+        "amount": body.amount,
+        "amount_type": body.amount_type,
+    }
+    guardrail_result = await validate_trade(user_id, intent)
+    if not guardrail_result["approved"]:
+        raise HTTPException(403, detail=guardrail_result["reason"])
+
+    # ------------------------------------------------------------------
+    # 4. Uniswap quote
+    # ------------------------------------------------------------------
+    try:
+        quote_result = await get_quote(
+            token_in=addr_in,
+            token_out=addr_out,
+            amount_in=amount_in_raw,
+        )
+    except ValueError as exc:
+        raise HTTPException(502, detail=f"Uniswap quote failed: {exc}")
+    except Exception as exc:
+        logger.exception("Uniswap quote error")
+        raise HTTPException(502, detail=f"Failed to get quote from Uniswap: {exc}")
+
+    amount_out = quote_result["amount_out"]
+    if amount_out <= 0:
+        raise HTTPException(400, detail="Insufficient liquidity for this trade.")
+
+    slippage_factor = 1 - (body.slippage / 100)
+    amount_out_min = int(amount_out * slippage_factor)
+
+    amount_in_human = body.amount
+    amount_out_human = amount_out / (10 ** decimals_out)
+
+    # ------------------------------------------------------------------
+    # 5. Build the batch calls:
+    #    [approve token_in → SwapRouter02, swap via exactInputSingle]
+    #
+    #    For gasless mode the approval is always included in the batch
+    #    (regardless of current on-chain allowance) because the UserOp is
+    #    executed atomically — the approve and the swap happen in the same
+    #    transaction via executeBySender, so we cannot pre-check whether a
+    #    prior approval would still be valid when the UserOp lands.
+    #
+    #    We use a finite approval (amount_in_raw) rather than MAX_UINT256 so
+    #    that any un-executed allowance doesn't persist on-chain.
+    # ------------------------------------------------------------------
+    is_native_eth = (
+        addr_in.lower() == WETH.lower()
+        and token_in_info.get("address") == "native"
+    )
+
+    calls: list[dict] = []
+
+    from services.uniswap import (
+        SELECTOR_APPROVE,
+        SELECTOR_EXACT_INPUT_SINGLE,
+        _encode_address as _enc_addr,
+        _encode_uint24,
+        _encode_uint160,
+        _encode_uint256 as _enc_u256,
+    )
+
+    if not is_native_eth:
+        # ERC-20 input: include approve call in the batch.
+        # Use a finite approval (amount_in_raw) so no residual allowance remains
+        # on-chain after the UserOp executes.
+        approve_data = (
+            "0x"
+            + SELECTOR_APPROVE
+            + _enc_addr(UNISWAP_SWAP_ROUTER_02)
+            + _enc_u256(amount_in_raw)
+        )
+        calls.append({
+            "to": addr_in,
+            "value": 0,
+            "data": approve_data,
+        })
+
+    # Swap call — encode exactInputSingle calldata directly so we get a raw
+    # Call dict without needing the async build_swap_tx helper.
+    eth_value_for_swap = amount_in_raw if is_native_eth else 0
+    swap_data = (
+        "0x"
+        + SELECTOR_EXACT_INPUT_SINGLE
+        + _enc_addr(addr_in)
+        + _enc_addr(addr_out)
+        + _encode_uint24(3000)          # default 0.3% pool fee tier
+        + _enc_addr(body.recipient)     # output tokens go to the user's EOA
+        + _enc_u256(amount_in_raw)
+        + _enc_u256(amount_out_min)
+        + _encode_uint160(0)            # sqrtPriceLimitX96 = 0 (no limit)
+    )
+    calls.append({
+        "to": UNISWAP_SWAP_ROUTER_02,
+        "value": eth_value_for_swap,
+        "data": swap_data,
+    })
+
+    # ------------------------------------------------------------------
+    # 6. Build gasless trade package (UserOp + paymaster data)
+    # ------------------------------------------------------------------
+    try:
+        gasless = await build_gasless_trade(
+            user_address=body.recipient,
+            calls=calls,
+            chain_id=1,
+        )
+    except ValueError as exc:
+        # PIMLICO_API_KEY not set or similar configuration error
+        raise HTTPException(
+            503,
+            detail=(
+                f"Gasless mode unavailable: {exc}. "
+                "Use /trade/quote for a standard ETH-gas transaction."
+            ),
+        )
+    except Exception as exc:
+        logger.exception("build_gasless_trade failed")
+        raise HTTPException(
+            503,
+            detail=(
+                f"Failed to build gasless trade: {exc}. "
+                "Use /trade/quote for a standard ETH-gas transaction."
+            ),
+        )
+
+    # ------------------------------------------------------------------
+    # 7. Persist quote and trade record
+    # ------------------------------------------------------------------
+    quote_id = str(uuid.uuid4())
+    expires_at = datetime.fromtimestamp(
+        time.time() + QUOTE_TTL_SECONDS, tz=timezone.utc
+    ).isoformat()
+
+    asset_symbol_for_record = token_out_symbol if side == "buy" else token_in_symbol
+    asset_name_for_record = (
+        token_out_info["name"] if side == "buy" else token_in_info["name"]
+    )
+
+    trade_id = await save_quoted_trade(
+        user_id=user_id,
+        asset=asset_name_for_record,
+        symbol=asset_symbol_for_record,
+        side=side,
+        amount=body.amount,
+        amount_type=body.amount_type,
+        total_usd=body.amount if body.amount_type == "usd" else 0.0,
+        guardrail_result=guardrail_result,
+    )
+
+    quote_data = {
+        "quote_id": quote_id,
+        "trade_id": trade_id,
+        "user_id": user_id,
+        "token_in_symbol": token_in_symbol,
+        "token_out_symbol": token_out_symbol,
+        "token_in_address": addr_in,
+        "token_out_address": addr_out,
+        "amount_in_raw": amount_in_raw,
+        "amount_out": amount_out,
+        "amount_out_min": amount_out_min,
+        "amount_in_human": amount_in_human,
+        "amount_out_human": amount_out_human,
+        "slippage": body.slippage,
+        "recipient": body.recipient,
+        "guardrail_result": guardrail_result,
+        "broadcast_mode": "bundler",
+        "gasless": gasless,
+    }
+    _store_quote(quote_id, quote_data)
+
+    return GaslessQuoteResponse(
+        quote_id=quote_id,
+        token_in={
+            "symbol": token_in_symbol,
+            "address": addr_in,
+            "decimals": decimals_in,
+        },
+        token_out={
+            "symbol": token_out_symbol,
+            "address": addr_out,
+            "decimals": decimals_out,
+        },
+        amount_in=f"{amount_in_human}",
+        amount_out=f"{amount_out_human:.8f}".rstrip("0").rstrip("."),
+        user_operation=gasless["user_operation"],
+        eip7702_auth=gasless["eip7702_auth"],
+        entrypoint=gasless["entrypoint"],
+        bundler_url=gasless["bundler_url"],
+        paymaster_mode=gasless["paymaster_mode"],
+        gas_estimate_usdc=gasless["gas_estimate_usdc"],
+        expires_at=expires_at,
+    )
 
 
 @router.get("/trade/status/{trade_id}")

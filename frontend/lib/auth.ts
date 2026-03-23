@@ -3,6 +3,7 @@
 import { createContext, useContext } from "react";
 import type { SwapProgress } from "./wallet/swap";
 
+
 export interface AuthUser {
   id: string;
   address: string;
@@ -73,6 +74,35 @@ export interface AuthContextType {
     onProgress: (progress: SwapProgress) => void,
     slippage?: number
   ) => Promise<{ txHash: string; success: boolean }>;
+  /**
+   * Execute a gasless token swap using EIP-7702 + AmbirePaymaster (USDC gas).
+   *
+   * The user's EOA pays for gas in USDC — no ETH balance required. Gas is
+   * deducted by the paymaster from the user's USDC balance at execution time.
+   *
+   * On the user's first gasless transaction the EOA must be delegated to
+   * AmbireAccount7702 via EIP-7702 — this happens automatically (one-time,
+   * transparent to the user) and is reported to the backend as part of the
+   * /trade/confirm call.
+   *
+   * The wallet must be unlocked (walletReady === true) before calling this.
+   * Throws with "Wallet is locked" if called when the wallet is not unlocked.
+   *
+   * @param tokenIn      Symbol or address of the token to sell
+   * @param tokenOut     Symbol or address of the token to buy
+   * @param amount       Amount to trade
+   * @param amountType   Whether amount is a USD value or token quantity
+   * @param onProgress   Callback invoked at each stage of the swap lifecycle
+   * @param slippage     Max acceptable slippage percentage (default: 0.5)
+   */
+  executeGaslessSwap: (
+    tokenIn: string,
+    tokenOut: string,
+    amount: number,
+    amountType: "usd" | "quantity",
+    onProgress: (progress: SwapProgress) => void,
+    slippage?: number
+  ) => Promise<{ txHash: string; success: boolean }>;
 }
 
 export const AuthContext = createContext<AuthContextType>({
@@ -92,6 +122,9 @@ export const AuthContext = createContext<AuthContextType>({
     throw new Error("AuthProvider not mounted");
   },
   executeSwap: async () => {
+    throw new Error("AuthProvider not mounted");
+  },
+  executeGaslessSwap: async () => {
     throw new Error("AuthProvider not mounted");
   },
 });
