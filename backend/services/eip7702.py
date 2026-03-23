@@ -60,6 +60,7 @@ USDC = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
 # ---------------------------------------------------------------------------
 
 PIMLICO_API_KEY = os.environ.get("PIMLICO_API_KEY", "")
+PIMLICO_POLICY_ID = os.environ.get("PIMLICO_POLICY_ID", "")
 AMBIRE_RELAYER_BASE = "https://relayer.ambire.com"
 
 # Gas defaults used when bundler estimation fails or is unavailable.
@@ -522,6 +523,71 @@ async def get_paymaster_data(
         return None
 
 
+async def get_pimlico_paymaster_data(
+    user_op: dict,
+    chain_id: int,
+) -> Optional[dict]:
+    """
+    Request paymaster sponsorship from Pimlico using a sponsorship policy.
+
+    Pimlico's paymaster API lives at the same bundler URL and uses the
+    standard ERC-7677 methods (pm_getPaymasterData) with a context
+    containing the sponsorship policy ID.
+
+    Returns the same shape as get_paymaster_data() on success, None on failure.
+    """
+    if not PIMLICO_API_KEY or not PIMLICO_POLICY_ID:
+        return None
+
+    bundler_url = f"https://api.pimlico.io/v2/{chain_id}/rpc?apikey={PIMLICO_API_KEY}"
+    payload = {
+        "jsonrpc": "2.0",
+        "method": "pm_getPaymasterData",
+        "params": [
+            user_op,
+            ERC4337_ENTRYPOINT,
+            hex(chain_id),
+            {"sponsorshipPolicyId": PIMLICO_POLICY_ID},
+        ],
+        "id": 1,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.post(bundler_url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        if "error" in data:
+            logger.warning(
+                "Pimlico paymaster error for chain %d: %s", chain_id, data["error"]
+            )
+            return None
+
+        result = data.get("result", {})
+        paymaster = result.get("paymaster")
+        paymaster_data = result.get("paymasterData")
+
+        if not paymaster or not paymaster_data:
+            logger.warning("Pimlico paymaster response incomplete: %s", result)
+            return None
+
+        return {
+            "paymaster": paymaster,
+            "paymasterData": paymaster_data,
+            "paymasterVerificationGasLimit": result.get(
+                "paymasterVerificationGasLimit", hex(DEFAULT_PAYMASTER_VER_GAS_LIMIT)
+            ),
+            "paymasterPostOpGasLimit": result.get(
+                "paymasterPostOpGasLimit", hex(DEFAULT_PAYMASTER_POSTOP_GAS_LIMIT)
+            ),
+        }
+
+    except Exception as exc:
+        logger.warning("Pimlico paymaster request failed: %s", exc)
+        return None
+
+
 # ---------------------------------------------------------------------------
 # USDC gas cost estimate
 # ---------------------------------------------------------------------------
@@ -698,13 +764,20 @@ async def build_gasless_trade(
     }
 
     # ------------------------------------------------------------------
-    # 6. Request paymaster signature from Ambire relay
+    # 6. Request paymaster signature (try Pimlico first, then Ambire)
     # ------------------------------------------------------------------
-    paymaster_result = await get_paymaster_data(user_op_for_paymaster, chain_id)
+    paymaster_result = await get_pimlico_paymaster_data(user_op_for_paymaster, chain_id)
     paymaster_mode = "none"
 
     if paymaster_result:
-        paymaster_mode = "ambire"
+        paymaster_mode = "pimlico"
+    else:
+        # Fall back to Ambire relayer
+        paymaster_result = await get_paymaster_data(user_op_for_paymaster, chain_id)
+        if paymaster_result:
+            paymaster_mode = "ambire"
+
+    if paymaster_result:
         final_paymaster = paymaster_result["paymaster"]
         final_paymaster_data = paymaster_result["paymasterData"]
         final_paymaster_ver_gas = paymaster_result.get(
