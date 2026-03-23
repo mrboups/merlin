@@ -206,7 +206,7 @@ function LangDropdown({ value, onChange }: { value: string; onChange: (v: string
           <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
           <div className="fixed z-[91] min-w-[130px] max-h-[320px] overflow-y-auto rounded-xl border border-border bg-card shadow-2xl py-1" style={style}>
             {LANG_OPTIONS.map(l => (
-              <button key={l.id} onClick={() => { onChange(l.id); localStorage.setItem("fw_voice_lang", l.id); setOpen(false); }}
+              <button key={l.id} onClick={() => { onChange(l.id); localStorage.setItem("merlin_voice_lang", l.id); setOpen(false); }}
                 className={`w-full flex items-center justify-center px-3 py-2 text-sm transition-colors ${value === l.id ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-accent"}`}>
                 <span>{l.label}</span>
               </button>
@@ -260,7 +260,7 @@ function ModelDropdown({ value, onChange }: { value: string; onChange: (v: strin
           <div className="fixed inset-0 z-[90]" onClick={() => setOpen(false)} />
           <div className="fixed z-[91] min-w-[160px] rounded-xl border border-border bg-card shadow-2xl py-1" style={style}>
             {MODEL_OPTIONS.map(m => (
-              <button key={m.id} onClick={() => { onChange(m.id); localStorage.setItem("fw_preferred_model", m.id); setOpen(false); }}
+              <button key={m.id} onClick={() => { onChange(m.id); localStorage.setItem("merlin_preferred_model", m.id); setOpen(false); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors ${value === m.id ? "bg-primary/10 text-primary font-medium" : "text-foreground hover:bg-accent"}`}>
                 <ModelIcon id={m.id} size={18} /><span>{m.label}</span>
               </button>
@@ -302,11 +302,11 @@ export default function ChatPage() {
 
   /* ─── effects ─── */
   useEffect(() => {
-    const s = localStorage.getItem("fw_voice_enabled"); if (s !== null) setVoiceEnabled(s === "true");
-    const l = localStorage.getItem("fw_voice_lang"); if (l) setVoiceLang(l);
-    const m = localStorage.getItem("fw_preferred_model"); if (m) setSelectedModel(m);
+    const s = localStorage.getItem("merlin_voice_enabled"); if (s !== null) setVoiceEnabled(s === "true");
+    const l = localStorage.getItem("merlin_voice_lang"); if (l) setVoiceLang(l);
+    const m = localStorage.getItem("merlin_preferred_model"); if (m) setSelectedModel(m);
     // Restore last conversation
-    const lastConv = localStorage.getItem("fw_last_conversation");
+    const lastConv = localStorage.getItem("merlin_last_conversation");
     if (lastConv) loadConversation(lastConv);
   }, []);
   useEffect(() => {
@@ -324,7 +324,7 @@ export default function ChatPage() {
   }, [messages]);
 
   /* ─── voice ─── */
-  const toggleVoice = () => { const n = !voiceEnabled; setVoiceEnabled(n); localStorage.setItem("fw_voice_enabled", String(n)); if (!n && audioRef.current) { audioRef.current.pause(); audioRef.current = null; } };
+  const toggleVoice = () => { const n = !voiceEnabled; setVoiceEnabled(n); localStorage.setItem("merlin_voice_enabled", String(n)); if (!n && audioRef.current) { audioRef.current.pause(); audioRef.current = null; } };
 
   // Use ref for voiceLang to avoid stale closures
   const voiceLangRef = useRef(voiceLang);
@@ -415,12 +415,12 @@ export default function ChatPage() {
 
   /* ─── actions ─── */
   const loadConversation = async (convId: string) => {
-    setConversationId(convId); setPanelOpen(false); setError(null); localStorage.setItem("fw_last_conversation", convId);
+    setConversationId(convId); setPanelOpen(false); setError(null); localStorage.setItem("merlin_last_conversation", convId);
     const r = await apiClient.get<{ conversation: Conversation; messages: Array<{ id: string; role: string; content: string; created_at: string; metadata?: Record<string, any> }> }>(`/api/v1/chat/conversations/${convId}/messages`);
     if (r.error) { setError("Failed to load conversation"); return; }
     setMessages((r.data?.messages ?? []).map((m) => ({ id: m.id, role: m.role as "user"|"assistant", content: m.content, created_at: m.created_at, requires_confirmation: m.metadata?.requires_confirmation, confirmation_id: m.metadata?.confirmation_token, confirmed: m.metadata?.confirmation_token ? true : undefined, trade_details: m.metadata?.trade_intent ? { asset: m.metadata.trade_intent.symbol, side: m.metadata.trade_intent.side, quantity: m.metadata.trade_intent.amount ?? m.metadata.trade_intent.quantity ?? 0, estimated_price: m.metadata.trade_intent.estimated_price ?? 0, estimated_total: m.metadata.trade_intent.estimated_total ?? 0 } : undefined })));
   };
-  const startNewChat = () => { setConversationId(null); setMessages([]); setError(null); setPanelOpen(false); localStorage.removeItem("fw_last_conversation"); };
+  const startNewChat = () => { setConversationId(null); setMessages([]); setError(null); setPanelOpen(false); localStorage.removeItem("merlin_last_conversation"); };
 
   const deleteConversation = async (convId: string, e: React.MouseEvent) => {
     e.stopPropagation(); // don't trigger loadConversation
@@ -432,7 +432,7 @@ export default function ChatPage() {
       if (conversationId === convId) {
         setConversationId(null);
         setMessages([]);
-        localStorage.removeItem("fw_last_conversation");
+        localStorage.removeItem("merlin_last_conversation");
       }
     } catch {
       // If API doesn't have delete endpoint yet, remove from UI anyway
@@ -447,7 +447,7 @@ export default function ChatPage() {
     const r = await apiClient.post<ChatApiResponse>("/api/v1/chat/message", { message: text, persona_id: selectedPersona, conversation_id: conversationId, model: selectedModel });
     if (r.error) { setSending(false); setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: r.error || "Something went wrong." }]); setTimeout(() => inputRef.current?.focus(), 100); return; }
     if (r.data) {
-      if (r.data.conversation_id && !conversationId) { setConversationId(r.data.conversation_id); localStorage.setItem("fw_last_conversation", r.data.conversation_id); queryClient.invalidateQueries({ queryKey: ["conversations"] }); }
+      if (r.data.conversation_id && !conversationId) { setConversationId(r.data.conversation_id); localStorage.setItem("merlin_last_conversation", r.data.conversation_id); queryClient.invalidateQueries({ queryKey: ["conversations"] }); }
       // Debug: log the trade intent from backend
       if (r.data.trade_intent) {
         console.log("[FW v50] trade_intent:", JSON.stringify(r.data.trade_intent));
@@ -537,7 +537,7 @@ export default function ChatPage() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Wallet className="h-5 w-5 text-primary" />
-              <span className="text-lg font-bold">FutureWallet</span>
+              <span className="text-lg font-bold">Merlin</span>
             </div>
             <button onClick={() => setPanelOpen(false)} className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground">
               <X className="h-5 w-5" />
@@ -600,7 +600,7 @@ export default function ChatPage() {
             <button onClick={() => setPanelOpen(true)} className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground">
               <Menu className="h-5 w-5" />
             </button>
-            <span className="text-sm font-medium text-foreground/70">FutureWallet</span>
+            <span className="text-sm font-medium text-foreground/70">Merlin</span>
           </div>
           <div className="flex items-center gap-1">
             <button onClick={() => setSignalsOpen(true)} className="p-1.5 rounded-lg hover:bg-accent text-muted-foreground relative" title="Social Signals">

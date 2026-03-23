@@ -5,7 +5,7 @@ import { useEffect, useRef, useCallback } from "react";
 const CHECK_INTERVAL = 30_000; // Check every 30 seconds
 
 /**
- * VersionCheck — 3-layer cache busting for FutureWallet PWA
+ * VersionCheck — 3-layer cache busting for Merlin PWA
  *
  * Layer 1: Next.js content-hashed JS/CSS chunks (_next/static/*)
  *          → immutable, max-age=1yr. Hash changes on code change.
@@ -26,7 +26,7 @@ export function VersionCheck() {
   const hardReload = useCallback(() => {
     if (reloading.current) return;
     reloading.current = true;
-    console.log("[FutureWallet] New version detected — clearing caches and reloading...");
+    console.log("[Merlin] New version detected — clearing caches and reloading...");
 
     // Clear all caches before reloading
     const doReload = () => globalThis.location?.reload();
@@ -46,7 +46,7 @@ export function VersionCheck() {
       navigator.serviceWorker
         .register("/sw.js", { scope: "/" })
         .then((registration) => {
-          console.log("[FutureWallet] SW registered");
+          console.log("[Merlin] SW registered");
 
           // Check for SW updates on each version check
           registration.addEventListener("updatefound", () => {
@@ -65,7 +65,7 @@ export function VersionCheck() {
           });
         })
         .catch((err) => {
-          console.warn("[FutureWallet] SW registration failed:", err);
+          console.warn("[Merlin] SW registration failed:", err);
         });
 
       // Listen for SW messages (e.g., SW_UPDATED from activate event)

@@ -31,22 +31,22 @@ export default function SettingsPage() {
   const [preferredModel, setPreferredModel] = useState<string>("claude");
 
   useEffect(() => {
-    const stored = localStorage.getItem("fw_voice_enabled");
+    const stored = localStorage.getItem("merlin_voice_enabled");
     if (stored !== null) setVoiceEnabled(stored === "true");
-    const m = localStorage.getItem("fw_preferred_model");
+    const m = localStorage.getItem("merlin_preferred_model");
     if (m) setPreferredModel(m);
   }, []);
 
   // Load token provider from localStorage + backend
   useEffect(() => {
-    const stored = localStorage.getItem("fw_token_provider");
+    const stored = localStorage.getItem("merlin_token_provider");
     if (stored === "xstocks" || stored === "ondo") setTokenProvider(stored);
 
     // Also fetch from backend
     apiClient.get<{ token_provider: string }>("/api/v1/chat/provider").then((res) => {
       if (res.data?.token_provider) {
         setTokenProvider(res.data.token_provider as "xstocks" | "ondo");
-        localStorage.setItem("fw_token_provider", res.data.token_provider);
+        localStorage.setItem("merlin_token_provider", res.data.token_provider);
       }
     }).catch(() => {});
   }, []);
@@ -54,12 +54,12 @@ export default function SettingsPage() {
   const toggleVoice = () => {
     const next = !voiceEnabled;
     setVoiceEnabled(next);
-    localStorage.setItem("fw_voice_enabled", String(next));
+    localStorage.setItem("merlin_voice_enabled", String(next));
   };
 
   const selectProvider = async (provider: "xstocks" | "ondo") => {
     setTokenProvider(provider);
-    localStorage.setItem("fw_token_provider", provider);
+    localStorage.setItem("merlin_token_provider", provider);
     setProviderSaving(true);
     try {
       await apiClient.patch("/api/v1/chat/provider", { token_provider: provider });
@@ -67,7 +67,7 @@ export default function SettingsPage() {
       // Revert on error
       const prev = provider === "xstocks" ? "ondo" : "xstocks";
       setTokenProvider(prev);
-      localStorage.setItem("fw_token_provider", prev);
+      localStorage.setItem("merlin_token_provider", prev);
     } finally {
       setProviderSaving(false);
     }
@@ -75,7 +75,7 @@ export default function SettingsPage() {
 
   const selectModel = (model: string) => {
     setPreferredModel(model);
-    localStorage.setItem("fw_preferred_model", model);
+    localStorage.setItem("merlin_preferred_model", model);
   };
 
   const saveRiskProfile = async () => {

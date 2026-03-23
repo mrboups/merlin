@@ -1,10 +1,10 @@
-// FutureWallet Service Worker
+// Merlin Service Worker
 // Minimal — no offline caching. Only purpose:
 // 1. Enable PWA "Install App" prompt
 // 2. Force-clear any stale caches on update
 // 3. skipWaiting + claim to immediately activate new version
 
-const CACHE_VERSION = "fw-v1";
+const CACHE_VERSION = "merlin-v1";
 
 // Install: skip waiting to activate immediately
 self.addEventListener("install", (event) => {
