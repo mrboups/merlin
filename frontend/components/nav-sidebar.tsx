@@ -27,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { apiClient } from "@/lib/api";
 
 const navItems = [
-  { href: "/", label: "Chat", icon: MessageSquare },
+  { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/assets", label: "Assets", icon: BarChart3 },
   { href: "/trades", label: "Trades", icon: ArrowUpRight },
   { href: "/personas", label: "Personas", icon: Users },

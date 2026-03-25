@@ -274,7 +274,7 @@ function ModelDropdown({ value, onChange }: { value: string; onChange: (v: strin
 
 /* ─── main ─── */
 export default function ChatPage() {
-  const { ready, authenticated, getAccessToken, user } = useAuth();
+  const { ready, authenticated, getAccessToken, user, executeSwap, walletReady } = useAuth();
   const queryClient = useQueryClient();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -448,15 +448,9 @@ export default function ChatPage() {
     if (r.error) { setSending(false); setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: r.error || "Something went wrong." }]); setTimeout(() => inputRef.current?.focus(), 100); return; }
     if (r.data) {
       if (r.data.conversation_id && !conversationId) { setConversationId(r.data.conversation_id); localStorage.setItem("merlin_last_conversation", r.data.conversation_id); queryClient.invalidateQueries({ queryKey: ["conversations"] }); }
-      // Debug: log the trade intent from backend
-      if (r.data.trade_intent) {
-        console.log("[FW v50] trade_intent:", JSON.stringify(r.data.trade_intent));
-        console.log("[FW v50] estimated_total:", r.data.trade_intent.estimated_total, "dollar_amount:", r.data.trade_intent.dollar_amount, "is_dollar:", r.data.trade_intent.is_dollar_amount);
-      }
       const ti = r.data!.trade_intent;
       // For dollar trades: force total to the dollar amount, ignore backend estimated_total
       const computedTotal = (ti?.is_dollar_amount && ti?.dollar_amount) ? ti.dollar_amount : (ti?.estimated_total ?? 0);
-      console.log("[FW v50] computedTotal:", computedTotal, "from dollar_amount:", ti?.dollar_amount, "or estimated_total:", ti?.estimated_total);
       const tradeDetails = ti ? {
         asset: ti.symbol,
         side: ti.side,
@@ -493,9 +487,56 @@ export default function ChatPage() {
 
     // If backend returned an unsigned tx for client-side signing
     if (r.data?.status === "sign_required" && r.data.unsigned_tx) {
-      // Wallet signing is not yet wired up — Kohaku/Ambire integration is in progress
-      setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: "Transaction signing is not yet available. Wallet integration is in progress." }]);
-      await apiClient.post("/api/v1/chat/report-trade", { confirmation_token: cid, tx_hash: "", status: "failed" });
+      if (!walletReady) {
+        setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: "Wallet is locked. Please re-authenticate before trading." }]);
+        await apiClient.post("/api/v1/chat/report-trade", { confirmation_token: cid, tx_hash: "", status: "failed" });
+      } else {
+        // Find the trade details from the message that triggered this confirmation
+        const tradeMsg = messages.find((m) => m.confirmation_id === cid);
+        const td = tradeMsg?.trade_details;
+
+        if (!td) {
+          setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: "Trade details not found. Please try again." }]);
+          await apiClient.post("/api/v1/chat/report-trade", { confirmation_token: cid, tx_hash: "", status: "failed" });
+        } else {
+          // Determine swap direction: buy = USDC→asset, sell = asset→USDC
+          const tokenIn = td.side === "buy" ? "USDC" : td.asset;
+          const tokenOut = td.side === "buy" ? td.asset : "USDC";
+          const amount = td.side === "buy" ? td.estimated_total : td.quantity;
+          const amountType: "usd" | "quantity" = td.side === "buy" ? "usd" : "quantity";
+
+          setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: "Signing and submitting transaction..." }]);
+
+          try {
+            const result = await executeSwap(
+              tokenIn, tokenOut, amount, amountType,
+              (progress) => {
+                // Update the last message with progress status
+                setMessages((p) => {
+                  const last = p[p.length - 1];
+                  if (last?.role === "assistant" && last.content.includes("igning")) {
+                    return [...p.slice(0, -1), { ...last, content: `${progress.status}: ${progress.message}` }];
+                  }
+                  return p;
+                });
+              }
+            );
+
+            if (result.success) {
+              setMessages((p) => p.map((m) => m.confirmation_id === cid ? { ...m, confirmed: true } : m));
+              setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: `Trade executed successfully! Tx: ${result.txHash.slice(0, 10)}...${result.txHash.slice(-8)}` }]);
+              await apiClient.post("/api/v1/chat/report-trade", { confirmation_token: cid, tx_hash: result.txHash, status: "confirmed" });
+            } else {
+              setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: "Transaction failed or was reverted. Please try again." }]);
+              await apiClient.post("/api/v1/chat/report-trade", { confirmation_token: cid, tx_hash: result.txHash, status: "failed" });
+            }
+          } catch (swapErr: unknown) {
+            const errMsg = swapErr instanceof Error ? swapErr.message : "Unknown error";
+            setMessages((p) => [...p, { id: crypto.randomUUID(), role: "assistant", content: `Trade failed: ${errMsg}` }]);
+            await apiClient.post("/api/v1/chat/report-trade", { confirmation_token: cid, tx_hash: "", status: "failed" });
+          }
+        }
+      }
     } else {
       // Non-swap confirmations (send, cancel, etc.)
       setMessages((p) => p.map((m) => m.confirmation_id === cid ? { ...m, confirmed: true } : m));

@@ -36,6 +36,13 @@ RP_ID: str = os.environ.get("WEBAUTHN_RP_ID", "localhost")
 RP_NAME: str = os.environ.get("WEBAUTHN_RP_NAME", "Merlin")
 ORIGIN: str = os.environ.get("WEBAUTHN_ORIGIN", "http://localhost:3000")
 
+if RP_ID == "localhost":
+    import logging
+    logging.getLogger(__name__).warning(
+        "WEBAUTHN_RP_ID is 'localhost' — passkeys will NOT work in production. "
+        "Set WEBAUTHN_RP_ID and WEBAUTHN_ORIGIN for your production domain."
+    )
+
 
 # ---------------------------------------------------------------------------
 # Registration

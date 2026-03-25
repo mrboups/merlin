@@ -29,6 +29,9 @@ from services.uniswap import (
     resolve_swap_addresses,
 )
 from services.xstock import CRYPTO_ASSETS, list_all_assets, resolve_token
+from services.prices import get_token_price, is_xstock
+from services.balances import get_all_balances
+from db.users import get_user_by_id
 
 logger = logging.getLogger(__name__)
 
@@ -512,13 +515,36 @@ async def _handle_get_price(
             "message": f"Could not find an asset matching '{asset_query}'.",
         })
     else:
-        # Price data is not available yet — return a clear message
-        tool_result = json.dumps({
-            "asset": matched_token["name"],
-            "symbol": matched_token["symbol"],
-            "error": "price_unavailable",
-            "message": f"Real-time price data for {matched_token['name']} ({matched_token['symbol']}) is not available yet. Price feeds will be integrated with the Uniswap V3 oracle.",
-        })
+        symbol = matched_token["symbol"]
+        # Determine the ticker for the price oracle
+        # xStock symbols (e.g. xTSLA) map to Backed Finance tickers (e.g. TSLAx)
+        backed_ticker = matched_token.get("backed_ticker", "")
+        price_symbol = backed_ticker if backed_ticker and is_xstock(backed_ticker) else symbol
+
+        try:
+            price = await get_token_price(price_symbol)
+            if price is not None:
+                tool_result = json.dumps({
+                    "asset": matched_token["name"],
+                    "symbol": symbol,
+                    "price_usd": round(price, 2),
+                    "source": "backed_finance" if is_xstock(price_symbol) else "coinmarketcap",
+                })
+            else:
+                tool_result = json.dumps({
+                    "asset": matched_token["name"],
+                    "symbol": symbol,
+                    "error": "price_unavailable",
+                    "message": f"Price data for {matched_token['name']} ({symbol}) is temporarily unavailable.",
+                })
+        except Exception as e:
+            logger.warning("Price fetch failed for %s: %s", symbol, e)
+            tool_result = json.dumps({
+                "asset": matched_token["name"],
+                "symbol": symbol,
+                "error": "price_error",
+                "message": f"Could not fetch price for {matched_token['name']}: {e}",
+            })
 
     async for event in _send_tool_result(
         client, user_id, conversation_id, history, call_id,
@@ -535,12 +561,69 @@ async def _handle_get_portfolio(
     call_id: str,
     args: dict,
 ) -> AsyncGenerator[str, None]:
-    """Handle portfolio query."""
-    # Portfolio data requires on-chain balance reads — not available yet
-    tool_result = json.dumps({
-        "error": "portfolio_unavailable",
-        "message": "Portfolio data is not available yet. On-chain balance reading will be integrated with the wallet module.",
-    })
+    """Handle portfolio query — fetches real on-chain balances and live prices."""
+    try:
+        user = await get_user_by_id(user_id)
+        address = user.get("address", "") if user else ""
+
+        if not address:
+            tool_result = json.dumps({
+                "total_value": 0,
+                "positions": [],
+                "message": "No wallet address found. Create or import a wallet first.",
+            })
+        else:
+            # Known ERC-20 tokens to scan (same list as portfolio router)
+            known_tokens = [
+                {"symbol": "USDC", "name": "USD Coin", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "decimals": 6},
+                {"symbol": "USDT", "name": "Tether", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "decimals": 6},
+                {"symbol": "WETH", "name": "Wrapped Ether", "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "decimals": 18},
+            ]
+
+            balances = await get_all_balances(address, known_tokens)
+
+            if not balances:
+                tool_result = json.dumps({
+                    "address": address,
+                    "total_value": 0,
+                    "positions": [],
+                    "message": "No token balances found for this wallet.",
+                })
+            else:
+                from services.prices import get_prices_batch
+
+                symbols = [b["symbol"] for b in balances]
+                prices = await get_prices_batch(symbols)
+
+                positions = []
+                total_value = 0.0
+                for bal in balances:
+                    sym = bal["symbol"]
+                    qty = bal["balance"]
+                    price = prices.get(sym)
+                    value = round(qty * price, 2) if price else None
+                    positions.append({
+                        "asset": bal["name"],
+                        "symbol": sym,
+                        "quantity": round(qty, 8),
+                        "price_usd": round(price, 2) if price else None,
+                        "value": value,
+                    })
+                    if value:
+                        total_value += value
+
+                tool_result = json.dumps({
+                    "address": address,
+                    "total_value": round(total_value, 2),
+                    "positions": positions,
+                })
+
+    except Exception as e:
+        logger.warning("Portfolio fetch failed for user %s: %s", user_id, e)
+        tool_result = json.dumps({
+            "error": "portfolio_error",
+            "message": f"Could not fetch portfolio: {e}",
+        })
 
     async for event in _send_tool_result(
         client, user_id, conversation_id, history, call_id,

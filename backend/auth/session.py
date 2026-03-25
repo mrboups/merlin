@@ -13,7 +13,17 @@ from datetime import datetime, timedelta, timezone
 
 from jose import JWTError, jwt
 
-SECRET_KEY: str = os.environ.get("JWT_SECRET", "dev-secret-change-in-production")
+_jwt_secret = os.environ.get("JWT_SECRET", "")
+if not _jwt_secret:
+    import secrets
+    _jwt_secret = secrets.token_hex(32)
+    import logging
+    logging.getLogger(__name__).warning(
+        "JWT_SECRET not set — using a random ephemeral secret. "
+        "All sessions will be invalidated on restart. "
+        "Set JWT_SECRET in production."
+    )
+SECRET_KEY: str = _jwt_secret
 ALGORITHM: str = "HS256"
 TOKEN_EXPIRY_HOURS: int = int(os.environ.get("JWT_EXPIRY_HOURS", "24"))
 

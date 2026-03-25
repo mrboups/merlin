@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from routers import auth, chat, portfolio, personas, social, trade
@@ -9,9 +11,19 @@ app = FastAPI(
     redoc_url=None,
 )
 
+# CORS: read allowed origins from env. In production set to the real domain(s).
+# Example: CORS_ORIGINS=https://merlin-app.web.app,https://merlin.app
+# Falls back to permissive localhost origins for local development only.
+_cors_env = os.environ.get("CORS_ORIGINS", "")
+_cors_origins = (
+    [o.strip() for o in _cors_env.split(",") if o.strip()]
+    if _cors_env
+    else ["http://localhost:3000", "http://localhost:3001"]
+)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Tighten in production
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

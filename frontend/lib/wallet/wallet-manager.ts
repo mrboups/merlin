@@ -36,6 +36,8 @@
 import { decrypt, type EncryptedBlob } from "../crypto/keystore";
 import { mnemonicToSeed } from "../crypto/seed";
 import { deriveEthKey, type EthKeyPair } from "../crypto/keys";
+import { deriveRailgunKeys } from "../privacy/railgun-keys";
+import type { RailgunKeys } from "../privacy/types";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -70,6 +72,7 @@ export class WalletManager {
   #publicKey: Uint8Array | null = null;
   #address: string | null = null;
   #path: string | null = null;
+  #railgunKeys: RailgunKeys | null = null;
 
   // ---------------------------------------------------------------------------
   // Auto-lock timer
@@ -124,6 +127,16 @@ export class WalletManager {
     this.#address = keypair.address;
     this.#path = keypair.path;
 
+    // Derive Railgun privacy keys (BabyJubJub + Ed25519)
+    // This runs asynchronously but we await it before returning
+    try {
+      this.#railgunKeys = await deriveRailgunKeys(mnemonic, index);
+    } catch {
+      // Privacy keys are non-critical — wallet still works without them.
+      // The error will surface when the user tries to use privacy features.
+      this.#railgunKeys = null;
+    }
+
     // Start / reset the auto-lock timer
     this.#resetAutoLock();
 
@@ -143,6 +156,13 @@ export class WalletManager {
   lock(): void {
     if (this.#privateKey) {
       this.#privateKey.fill(0);
+    }
+
+    // Zero Railgun key material
+    if (this.#railgunKeys) {
+      this.#railgunKeys.spending.privateKey.fill(0);
+      this.#railgunKeys.viewing.privateKey.fill(0);
+      this.#railgunKeys = null;
     }
 
     this.#privateKey = null;
@@ -222,6 +242,31 @@ export class WalletManager {
     return () => {
       this.#onLockCallbacks = this.#onLockCallbacks.filter((cb) => cb !== callback);
     };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public: Railgun privacy key access
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Return the Railgun 0zk address, or null if locked or keys unavailable.
+   */
+  getRailgunAddress(): string | null {
+    return this.#railgunKeys?.address ?? null;
+  }
+
+  /**
+   * Return the full Railgun key set, or null if locked or keys unavailable.
+   *
+   * This method resets the auto-lock timer — accessing keys counts as activity.
+   *
+   * IMPORTANT: The caller must NEVER store the returned reference beyond the
+   * immediate operation. The WalletManager remains the sole owner.
+   */
+  getRailgunKeys(): RailgunKeys | null {
+    if (!this.#railgunKeys) return null;
+    this.#resetAutoLock();
+    return this.#railgunKeys;
   }
 
   // ---------------------------------------------------------------------------
