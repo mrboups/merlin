@@ -14,7 +14,9 @@ const footerLinks = [
   {
     heading: "Resources",
     links: [
-      { label: "Documentation", href: "/docs" },
+      { label: "User Docs", href: "/docs" },
+      { label: "Developer Docs", href: "/dev" },
+      { label: "Feature Specs", href: "/specs" },
       { label: "Whitepaper", href: "/whitepaper" },
       { label: "GitHub", href: "https://github.com/mrboups/merlin", external: true },
     ],
