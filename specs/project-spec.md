@@ -31,7 +31,7 @@ We use Kohaku's wallet infrastructure directly:
 | **Auth (frontend)** | `@simplewebauthn/browser` + custom AuthProvider | Live |
 | **Crypto (frontend)** | `@noble/hashes`, `@noble/ciphers`, `@noble/curves`, `@scure/bip39`, `@scure/bip32` | Live |
 | **Backend** | Python 3.12 + FastAPI | Live |
-| **AI** | OpenAI GPT-4o-mini (function calling, streaming) | Live |
+| **AI** | Claude Haiku (tool use, streaming) | Live |
 | **Social** | Grok/xAI (X/Twitter sentiment analysis) | Live |
 | **Database** | Firestore (conversations, trades, signals, challenges) | Live |
 | **Hosting** | Firebase Hosting (PWA) + Cloud Run (API) | Live |
@@ -94,7 +94,7 @@ backend/
     challenges.py            # WebAuthn challenge store (Firestore-backed)
   services/
     provider.py              # JSON-RPC client (ETH balance, eth_call)
-    chat.py                  # OpenAI streaming chat with function calling
+    chat.py                  # Claude streaming chat with tool use
     xstock.py                # 61 xStock tokens + fuzzy matching
     guardrails.py            # 8 trade safety checks
     prices.py                # Price oracle (CoinMarketCap + Backed Finance)
@@ -123,7 +123,7 @@ backend/
 ### Chat (`/api/v1`)
 | Method | Path | Status | Description |
 |--------|------|--------|-------------|
-| POST | `/chat` | Live | Streaming SSE chat with OpenAI |
+| POST | `/chat` | Live | Streaming SSE chat with Claude |
 | GET | `/chat/history` | Live | Get conversation messages |
 | DELETE | `/chat/history` | Live | Clear conversation |
 | GET | `/chat/sessions` | Live | List conversations |

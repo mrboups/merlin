@@ -4,7 +4,7 @@
 
 ## Overview
 
-The AI Chat Pipeline is the primary interface through which users interact with Merlin. It accepts free-form natural language messages, classifies intent via OpenAI GPT-4o-mini function calling, and produces either a streamed conversational response or a structured trade confirmation card that the user signs on-chain. All responses are delivered as Server-Sent Events (SSE), giving the frontend real-time streaming text with no polling.
+The AI Chat Pipeline is the primary interface through which users interact with Merlin. It accepts free-form natural language messages, classifies intent via Claude Haiku tool use, and produces either a streamed conversational response or a structured trade confirmation card that the user signs on-chain. All responses are delivered as Server-Sent Events (SSE), giving the frontend real-time streaming text with no polling.
 
 ## Architecture
 
@@ -19,10 +19,10 @@ chat()  [backend/services/chat.py]
   │
   ├─ Persist user message → Firestore (users/{uid}/conversations/{cid}/messages)
   │
-  ├─ Build OpenAI messages array (system prompt + last 50 messages from Firestore)
+  ├─ Build Claude messages array (system prompt + last 50 messages from Firestore)
   │
   ▼
-OpenAI GPT-4o-mini  — stream=True, tool_choice="auto"
+Claude Haiku  — stream=True, tool_choice="auto"
   │
   ├── finish_reason == "stop"
   │     └─ Stream text chunks as {"type": "text", "content": "..."}
@@ -34,7 +34,7 @@ OpenAI GPT-4o-mini  — stream=True, tool_choice="auto"
         │     │
         │     ├─ xStock resolver  [services/xstock.py]
         │     │     resolve_token(asset_query) → matched_token + confidence
-        │     │     Low confidence (<0.8) → emit ambiguous_asset tool result → GPT asks clarification
+        │     │     Low confidence (<0.8) → emit ambiguous_asset tool result → Claude asks clarification
         │     │
         │     ├─ Guardrails  [services/guardrails.py]
         │     │     validate_trade(user_id, intent) → approved | blocked + reason
@@ -46,7 +46,7 @@ OpenAI GPT-4o-mini  — stream=True, tool_choice="auto"
         │     │
         │     ├─ Emit {"type": "trade_intent", "data": {...}}  → frontend renders confirmation card
         │     │
-        │     └─ Second GPT call with tool result → stream confirmation text
+        │     └─ Second Claude call with tool result → stream confirmation text
         │
         ├── get_price(asset)
         │     resolve_token() → symbol → get_token_price() → stream price text
@@ -65,7 +65,7 @@ User confirms trade confirmation card
 
 ## Implementation Details
 
-### OpenAI Function Calling — 3 Tools
+### Claude Tool Use — 3 Tools
 
 | Tool | Trigger | Parameters |
 |------|---------|------------|
@@ -73,7 +73,7 @@ User confirms trade confirmation card
 | `get_price` | User asks about a price | `asset` (string) |
 | `get_portfolio` | User asks about portfolio/balance/holdings | none |
 
-All three tools go through a second GPT streaming call after the tool result is produced, so the user always receives a natural language follow-up in addition to any structured event.
+All three tools go through a second Claude streaming call after the tool result is produced, so the user always receives a natural language follow-up in addition to any structured event.
 
 ### SSE Event Protocol
 
@@ -104,7 +104,7 @@ The system prompt (`SYSTEM_PROMPT` in `backend/services/chat.py`) defines Merlin
 
 ### Intent Parsing — Natural Language to Structured Intent
 
-GPT-4o-mini extracts the following fields via `parse_trade_intent`:
+Claude Haiku extracts the following fields via `parse_trade_intent`:
 
 | Field | Type | Values |
 |-------|------|--------|
@@ -123,11 +123,11 @@ The asset string is then passed to the xStock resolver.
 - `confidence` — 0.0–1.0 match confidence
 - `alternatives` — other candidate symbols when confidence is low
 
-If `confidence < 0.8` and alternatives exist, the tool result signals `ambiguous_asset` back to GPT, which then asks the user to clarify — the trade is not queued.
+If `confidence < 0.8` and alternatives exist, the tool result signals `ambiguous_asset` back to Claude, which then asks the user to clarify — the trade is not queued.
 
 ### Guardrail Validation
 
-Every parsed trade passes through `validate_trade(user_id, intent)` in `backend/services/guardrails.py` before a quote is requested or a trade is stored. If `approved` is `False`, the tool result carries the blocking `reason` and the trade is rejected — GPT informs the user in plain language.
+Every parsed trade passes through `validate_trade(user_id, intent)` in `backend/services/guardrails.py` before a quote is requested or a trade is stored. If `approved` is `False`, the tool result carries the blocking `reason` and the trade is rejected — Claude informs the user in plain language.
 
 ### Uniswap V3 Quote
 
@@ -136,7 +136,7 @@ After guardrails pass, `uniswap_get_quote(token_in, token_out, amount_in)` is ca
 ### Conversation Persistence
 
 - Every user and assistant message is stored in Firestore immediately.
-- The context window sent to GPT is the system prompt plus the last 50 messages (`_build_openai_messages`).
+- The context window sent to Claude is the system prompt plus the last 50 messages (`_build_claude_messages`).
 - Assistant messages that follow a tool call carry `metadata.function_call` for auditability.
 - Conversation `updated_at` is touched on every new message.
 
@@ -150,13 +150,13 @@ Users can maintain multiple named conversations. Sessions are scoped per user:
 
 ### AI Model Preference
 
-Users can switch between allowed GPT models. The preference is stored as `ai_model` on the Firestore user document and returned by `GET /chat/provider`. Allowed values: `gpt-4o-mini`, `gpt-4o`, `gpt-4-turbo`. The frontend also maintains a local `localStorage` preference under `merlin_preferred_model`.
+Users can switch between allowed Claude models. The preference is stored as `ai_model` on the Firestore user document and returned by `GET /chat/provider`. Allowed values: `claude-haiku-4-5-20251001`, `claude-sonnet-4-20250514`, `claude-opus-4-20250514`. The frontend also maintains a local `localStorage` preference under `merlin_preferred_model`.
 
 ## Code Map
 
 | File | Purpose |
 |------|---------|
-| `backend/services/chat.py` | Core chat service — OpenAI client, streaming SSE generator, all three tool handlers, conversation history builder |
+| `backend/services/chat.py` | Core chat service — Anthropic client, streaming SSE generator, all three tool handlers, conversation history builder |
 | `backend/routers/chat.py` | FastAPI router — all 8 chat/market endpoints, request/response models |
 | `backend/db/conversations.py` | Firestore CRUD for conversations and messages |
 | `backend/db/trades.py` | Firestore CRUD for trade records; `save_quoted_trade()` called by chat service |
@@ -179,7 +179,7 @@ Users can switch between allowed GPT models. The preference is stored as `ai_mod
 | `POST` | `/chat/sessions` | Bearer JWT | Create a new empty conversation. Returns conversation doc |
 | `DELETE` | `/chat/sessions` | Bearer JWT | Delete a conversation and all its messages. Query: `conversation_id` |
 | `GET` | `/chat/provider` | Bearer JWT | Get user's stored AI model preference |
-| `PATCH` | `/chat/provider` | Bearer JWT | Update AI model preference. Body: `{model}`. Allowed: `gpt-4o-mini`, `gpt-4o`, `gpt-4-turbo` |
+| `PATCH` | `/chat/provider` | Bearer JWT | Update AI model preference. Body: `{model}`. Allowed: `claude-haiku-4-5-20251001`, `claude-sonnet-4-20250514`, `claude-opus-4-20250514` |
 | `GET` | `/market/assets` | Bearer JWT | List all tradable assets. Query: `asset_type` (stock, etf, commodity_etf, crypto) |
 
 ## Firestore Schema
@@ -220,18 +220,18 @@ users/{userId}/
 
 | Variable | Location | Description |
 |----------|----------|-------------|
-| `OPENAI_API_KEY` | `Secret Manager` / `.env` | Required. Used to instantiate `AsyncOpenAI` client. Raises `RuntimeError` at first request if missing. |
-| Model name | `backend/services/chat.py` → `MODEL = "gpt-4o-mini"` | Default model for all chat completions. |
+| `ANTHROPIC_API_KEY` | `Secret Manager` / `.env` | Required. Used to instantiate `AsyncAnthropic` client. Raises `RuntimeError` at first request if missing. |
+| Model name | `backend/services/chat.py` → `MODEL = "claude-haiku-4-5-20251001"` | Default model for all chat completions. |
 | System prompt | `backend/services/chat.py` → `SYSTEM_PROMPT` | Defines Merlin identity, tool usage rules, xStock compliance rules, and communication style. |
-| Context window limit | `backend/services/chat.py` → `_build_openai_messages()`, `limit=50` | Number of prior messages included in each OpenAI call. |
-| Allowed models | `backend/routers/chat.py` → `allowed_models` set | `gpt-4o-mini`, `gpt-4o`, `gpt-4-turbo`. Requests for other values return HTTP 400. |
+| Context window limit | `backend/services/chat.py` → `_build_claude_messages()`, `limit=50` | Number of prior messages included in each Claude call. |
+| Allowed models | `backend/routers/chat.py` → `allowed_models` set | `claude-haiku-4-5-20251001`, `claude-sonnet-4-20250514`, `claude-opus-4-20250514`. Requests for other values return HTTP 400. |
 
 ## Current Limitations
 
 - **No persona integration in the LLM call.** The frontend renders a persona selector (Elon, Buffett, AI Momentum) and persists the chosen persona ID, but the selected persona is not passed to the backend and does not alter the system prompt or tool behavior. Persona-aware context injection is not yet implemented.
 - **Context window is a hard slice of 50 messages.** There is no summarization or token-budget management. Long conversations will silently drop the oldest messages. This can cause the model to lose earlier intent signals in extended sessions.
 - **No voice input backend.** The frontend implements voice input via the browser Web Speech API (`webkitSpeechRecognition`) and TTS via `window.speechSynthesis`. Both are entirely client-side. There is no server-side STT or TTS pipeline.
-- **Model selector is UI-only for non-GPT providers.** The frontend offers Claude and Grok options in the model dropdown (`MODEL_OPTIONS`) but the backend only validates and uses OpenAI models. Selecting Claude or Grok from the UI has no effect on the actual model used.
+- **Model selector is UI-only for non-Claude providers.** The frontend offers Grok options in the model dropdown (`MODEL_OPTIONS`) but the backend only validates and uses Anthropic Claude models. Selecting Grok from the UI has no effect on the actual model used.
 - **No streaming abort.** There is no mechanism for the client to cancel an in-flight SSE stream (e.g., `AbortController` wired to a server-side cancellation). The stream runs to completion even if the user navigates away.
 - **No multi-tool fan-out.** A single user message can only trigger one tool call per streaming pass. Compound requests (e.g., "buy Tesla and show me my portfolio") are not split into parallel tool invocations.
 - **Quoted trades are not automatically expired.** Trades written to Firestore with `status: "quoted"` accumulate indefinitely. There is no TTL or cleanup job to remove stale unconfirmed quotes.

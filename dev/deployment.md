@@ -50,7 +50,7 @@ Copy `.env.example` to `.env` and fill in real values. Never commit `.env` to ve
 | `GCP_REGION` | `europe-west1` | All deploys |
 | `ETH_RPC_URL` | Ethereum mainnet RPC endpoint | Backend runtime |
 | `SEPOLIA_RPC_URL` | Sepolia testnet RPC endpoint | Development |
-| `OPENAI_API_KEY` | OpenAI API key (chat + intent parsing) | Backend runtime |
+| `ANTHROPIC_API_KEY` | Anthropic API key (chat + intent parsing) | Backend runtime |
 | `GROK_API_KEY` | Grok/xAI API key (social sentiment) | Optional |
 | `COINMARKETCAP_API_KEY` | CoinMarketCap API key (price data) | Backend runtime |
 | `CORS_ORIGINS` | Allowed origins, comma-separated | Production |
@@ -106,7 +106,7 @@ gcloud run deploy merlin-api \
   --region europe-west1 \
   --image europe-west1-docker.pkg.dev/merlin-wallet-prod/merlin-docker/merlin-api:latest \
   --allow-unauthenticated \
-  --set-secrets="ETH_RPC_URL=ETH_RPC_URL:latest,SEPOLIA_RPC_URL=SEPOLIA_RPC_URL:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,GROK_API_KEY=GROK_API_KEY:latest"
+  --set-secrets="ETH_RPC_URL=ETH_RPC_URL:latest,SEPOLIA_RPC_URL=SEPOLIA_RPC_URL:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,GROK_API_KEY=GROK_API_KEY:latest"
 ```
 
 ### Option 2: Cloud Build
@@ -156,7 +156,7 @@ gcloud secrets describe SECRET_NAME --project=merlin-wallet-prod
 gcloud secrets versions access latest --secret=SECRET_NAME --project=merlin-wallet-prod
 ```
 
-Current secrets: `ETH_RPC_URL`, `SEPOLIA_RPC_URL`, `OPENAI_API_KEY`, `GROK_API_KEY`.
+Current secrets: `ETH_RPC_URL`, `SEPOLIA_RPC_URL`, `ANTHROPIC_API_KEY`, `GROK_API_KEY`.
 
 ---
 

@@ -205,7 +205,7 @@ Associate a derived EOA address with the authenticated user. Called by the front
 
 ### Chat (`/api/v1`)
 
-The chat system uses OpenAI function calling to parse user intent and route to appropriate handlers (trade, price query, portfolio lookup, etc.). Responses are streamed via Server-Sent Events.
+The chat system uses Claude tool use to parse user intent and route to appropriate handlers (trade, price query, portfolio lookup, etc.). Responses are streamed via Server-Sent Events.
 
 #### POST `/chat`
 

@@ -7,7 +7,7 @@ const techStack = [
   { name: "Railgun", description: "ZK privacy", color: "#a855f7" },
   { name: "Privacy Pools", description: "Compliant privacy", color: "#00d4aa" },
   { name: "Ambire", description: "Smart EOA (EIP-7702)", color: "#0094ff" },
-  { name: "OpenAI", description: "Intent parsing", color: "#10a37f" },
+  { name: "Claude", description: "Intent parsing", color: "#d97706" },
   { name: "Next.js", description: "PWA framework", color: "#ffffff" },
   { name: "Firestore", description: "Real-time sync", color: "#ffa611" },
 ];

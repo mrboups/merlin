@@ -1,7 +1,7 @@
 # Chat Pipeline
 
 ## Overview
-Merlin's AI chat uses OpenAI GPT-4o-mini with function calling to parse natural language into structured trade intents. Responses stream via Server-Sent Events (SSE).
+Merlin's AI chat uses Claude Haiku with tool use to parse natural language into structured trade intents. Responses stream via Server-Sent Events (SSE).
 
 ## Message Flow
 ```
@@ -11,9 +11,9 @@ POST /api/v1/chat {message, conversation_id}
     |
 Backend loads conversation history from Firestore
     |
-Sends to OpenAI with system prompt + 3 function tools
+Sends to Claude with system prompt + 3 function tools
     |
-OpenAI streams response chunks via SSE:
+Claude streams response chunks via SSE:
   1. If function call detected:
      a. parse_trade_intent -> {side: "buy", asset: "Tesla", amount: 50, amount_type: "usd"}
      b. xStock resolver -> xTSLA (contract: 0x8ad3c73f...)
@@ -27,7 +27,7 @@ OpenAI streams response chunks via SSE:
      SSE: {"type": "done", "conversation_id": "..."}
 ```
 
-## OpenAI Function Tools
+## Claude Function Tools
 1. **parse_trade_intent** — extracts: side (buy/sell), asset (name/ticker), amount (number), amount_type (usd/quantity)
 2. **get_price** — fetches current price for any asset
 3. **get_portfolio** — returns user's current holdings
@@ -60,7 +60,7 @@ Defines Merlin as an AI trading assistant. Key rules:
 ## Key Files
 | File | Purpose |
 |------|---------|
-| backend/services/chat.py | OpenAI streaming, function calling, intent processing |
+| backend/services/chat.py | Claude streaming, tool use, intent processing |
 | backend/routers/chat.py | 8 chat + 1 market endpoint |
 | backend/db/conversations.py | Conversation persistence |
 | frontend/app/chat/page.tsx | Chat UI (messages, voice, TTS, trade cards) |

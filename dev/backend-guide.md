@@ -12,7 +12,7 @@ The backend is a FastAPI Python application deployed to Google Cloud Run. It han
 | py-webauthn | 2.1.0 | WebAuthn registration + authentication |
 | python-jose | latest | JWT creation and verification (HS256) |
 | google-cloud-firestore | latest | Async Firestore client |
-| openai | latest | GPT-4o-mini, function calling, streaming |
+| anthropic | latest | Claude Haiku, tool use, streaming |
 | httpx | latest | Async HTTP client (price oracles, Grok) |
 | pydantic | v2 | Request/response model validation |
 
@@ -40,7 +40,7 @@ backend/
     challenges.py            store_challenge, get_challenge, delete_challenge (5-min TTL)
 
   services/
-    chat.py                  OpenAI streaming chat with function calling
+    chat.py                  Claude streaming chat with tool use
     xstock.py                xStock token registry + fuzzy matching
     guardrails.py            Pre-trade safety check engine
     uniswap.py               Uniswap V3 Quoter + SwapRouter (raw ABI encoding)
@@ -324,11 +324,11 @@ Response: {
 
 ## Services
 
-### `services/chat.py` — OpenAI Chat
+### `services/chat.py` — Claude Chat
 
-Manages the streaming chat loop with function calling.
+Manages the streaming chat loop with tool use.
 
-**Function definitions passed to OpenAI:**
+**Tool definitions passed to Claude:**
 
 ```python
 FUNCTIONS = [
@@ -366,7 +366,7 @@ FUNCTIONS = [
 ]
 ```
 
-When OpenAI returns a function call, `chat.py` resolves the intent, runs guardrails, gets a Uniswap quote, then emits a `trade_confirmation` SSE event. The actual transaction is not built server-side — the client builds and signs it after user confirmation.
+When Claude returns a tool use, `chat.py` resolves the intent, runs guardrails, gets a Uniswap quote, then emits a `trade_confirmation` SSE event. The actual transaction is not built server-side — the client builds and signs it after user confirmation.
 
 ### `services/xstock.py` — xStock Token Registry
 
@@ -658,7 +658,7 @@ Firestore TTL policy should be configured to auto-delete documents where `expire
 
 ### Async Throughout
 
-Every function that touches I/O (Firestore, RPC, OpenAI, Grok, httpx) is `async`. FastAPI handles the event loop. Do not use synchronous Firestore or HTTP clients.
+Every function that touches I/O (Firestore, RPC, Anthropic, Grok, httpx) is `async`. FastAPI handles the event loop. Do not use synchronous Firestore or HTTP clients.
 
 ```python
 # Correct
@@ -727,7 +727,7 @@ WEBAUTHN_RP_NAME=Merlin
 WEBAUTHN_ORIGIN=https://merlin-app.web.app
 
 # AI
-OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-...
 GROK_API_KEY=xai-...
 
 # Price Oracles
@@ -740,7 +740,7 @@ CORS_ORIGINS=https://merlin-app.web.app
 GCP_PROJECT_ID=merlin-wallet-prod
 ```
 
-In production, sensitive values (`JWT_SECRET`, `OPENAI_API_KEY`, `GROK_API_KEY`, `ETH_RPC_URL`) are loaded from Google Secret Manager via the Cloud Run service account. Local development uses `.env`.
+In production, sensitive values (`JWT_SECRET`, `ANTHROPIC_API_KEY`, `GROK_API_KEY`, `ETH_RPC_URL`) are loaded from Google Secret Manager via the Cloud Run service account. Local development uses `.env`.
 
 ---
 
@@ -771,7 +771,7 @@ gcloud run deploy merlin-api \
   --project merlin-wallet-prod \
   --platform managed \
   --allow-unauthenticated \
-  --set-secrets "JWT_SECRET=JWT_SECRET:latest,OPENAI_API_KEY=OPENAI_API_KEY:latest,GROK_API_KEY=GROK_API_KEY:latest,ETH_RPC_URL=ETH_RPC_URL:latest,SEPOLIA_RPC_URL=SEPOLIA_RPC_URL:latest"
+  --set-secrets "JWT_SECRET=JWT_SECRET:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest,GROK_API_KEY=GROK_API_KEY:latest,ETH_RPC_URL=ETH_RPC_URL:latest,SEPOLIA_RPC_URL=SEPOLIA_RPC_URL:latest"
 ```
 
 ### Local Development

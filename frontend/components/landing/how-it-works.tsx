@@ -7,7 +7,7 @@ const steps = [
     title: "Chat",
     description:
       "Type what you want in plain English. \"Buy $100 of Apple\", \"Swap ETH to USDC\", \"What's my portfolio worth?\" — Merlin understands it all.",
-    detail: "Powered by OpenAI function calling with intent parsing trained on financial language.",
+    detail: "Powered by Claude tool use with intent parsing trained on financial language.",
     color: "#0094ff",
   },
   {

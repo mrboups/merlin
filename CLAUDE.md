@@ -37,7 +37,7 @@ Merlin is a privacy-preserving non-custodial wallet for Ethereum — an optimize
 - **Language**: Python 3.12
 - **Framework**: FastAPI
 - **AI Pipeline**: LangGraph + LangChain
-- **LLM**: OpenAI (primary — function calling for intent parsing), Grok (social sentiment)
+- **LLM**: Anthropic Claude (primary — tool use for intent parsing), Grok (social sentiment)
 - **Database**: Firestore (real-time sync, security rules)
 
 ### Wallet Infrastructure (Kohaku-based)
@@ -89,7 +89,7 @@ Merlin is a privacy-preserving non-custodial wallet for Ethereum — an optimize
 | **Firestore** | Active | Native mode, `europe-west1`, real-time updates enabled |
 | **Firebase Hosting** | Active | Site: `merlin-app`, URL: https://merlin-app.web.app |
 | **Cloud Run** | Enabled | Region: `europe-west1` (no service deployed yet) |
-| **Secret Manager** | Active | Secrets: `ETH_RPC_URL`, `SEPOLIA_RPC_URL`, `OPENAI_API_KEY`, `GROK_API_KEY` |
+| **Secret Manager** | Active | Secrets: `ETH_RPC_URL`, `SEPOLIA_RPC_URL`, `ANTHROPIC_API_KEY`, `GROK_API_KEY` |
 | **Artifact Registry** | Active | Repo: `merlin-docker` (Docker, `europe-west1`) |
 | **Cloud Build** | Enabled | For building Docker images |
 
@@ -103,7 +103,7 @@ All secrets are created with placeholder values — replace with real values:
 ```bash
 echo -n "YOUR_REAL_VALUE" | gcloud secrets versions add ETH_RPC_URL --data-file=- --project=merlin-wallet-prod
 echo -n "YOUR_REAL_VALUE" | gcloud secrets versions add SEPOLIA_RPC_URL --data-file=- --project=merlin-wallet-prod
-echo -n "YOUR_REAL_VALUE" | gcloud secrets versions add OPENAI_API_KEY --data-file=- --project=merlin-wallet-prod
+echo -n "YOUR_REAL_VALUE" | gcloud secrets versions add ANTHROPIC_API_KEY --data-file=- --project=merlin-wallet-prod
 echo -n "YOUR_REAL_VALUE" | gcloud secrets versions add GROK_API_KEY --data-file=- --project=merlin-wallet-prod
 ```
 
@@ -308,7 +308,7 @@ See **Google Cloud Setup** section above for full `.env` template.
 | `GCP_REGION` | GCP region (europe-west1) | Yes (deploy) |
 | `ETH_RPC_URL` | Ethereum mainnet RPC endpoint | For mainnet operations |
 | `SEPOLIA_RPC_URL` | Sepolia testnet RPC endpoint | For testnet development |
-| `OPENAI_API_KEY` | OpenAI API key for AI agents | Yes |
+| `ANTHROPIC_API_KEY` | Anthropic API key for AI agents | Yes |
 | `GROK_API_KEY` | Grok API key for social sentiment | For social features |
 | `FIREBASE_PROJECT_ID` | Firebase project ID | Yes (deploy) |
 | `DEBUG` | Enable verbose logging ("true" / "false") | No |

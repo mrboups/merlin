@@ -49,8 +49,8 @@ Phase 7 (Production Hardening)    ░░░░░░░░░░ Not started
 
 ## Phase 2: Chat + Portfolio + Social — DONE
 
-- [x] OpenAI chat: GPT-4o-mini with function calling, SSE streaming
-- [x] Intent parsing: trade intents extracted via function calls
+- [x] Claude chat: Claude Haiku with tool use, SSE streaming
+- [x] Intent parsing: trade intents extracted via tool use
 - [x] xStock resolver: 61 tokens, fuzzy matching, aliases, disambiguation
 - [x] Guardrails: 8 safety checks (amount, asset, rate limit, duplicates, compliance)
 - [x] Price oracle: CoinMarketCap (crypto) + Backed Finance (xStocks)

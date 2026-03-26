@@ -109,8 +109,8 @@ All three paths produce a standard Ethereum EOA that works identically with the 
 |-----------|-----------|--------|
 | Language | Python 3.12 | Build ourselves |
 | Framework | FastAPI | Build ourselves |
-| AI chat | OpenAI GPT-4o-mini (function calling, SSE streaming) | Live |
-| LLM (intent parsing) | OpenAI (function calling) | Build ourselves |
+| AI chat | Claude Haiku (tool use, SSE streaming) | Live |
+| LLM (intent parsing) | Anthropic Claude (tool use) | Build ourselves |
 | LLM (social sentiment) | Grok (X/Twitter analysis) | Build ourselves |
 | Persistence | Firestore (conversations, trades, signals, challenges) | Live |
 

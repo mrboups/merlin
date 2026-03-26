@@ -17,7 +17,7 @@ Merlin is a privacy-preserving non-custodial wallet for Ethereum. Users trade to
 
 ### Feature Pipelines
 - [Auth Flow](architecture.md#auth-flow) — Passkey registration, WebAuthn ceremonies, seed encryption, session management
-- [Chat Pipeline](architecture.md#chat-flow) — SSE streaming, OpenAI function calling, intent parsing, confirmation loop
+- [Chat Pipeline](architecture.md#chat-flow) — SSE streaming, Claude tool use, intent parsing, confirmation loop
 - [Trading Pipeline](architecture.md#trade-flow) — Quote → simulate → policy → execute → confirm → persist
 - [Privacy System](architecture.md#privacy-flow) — Railgun shielding, private swaps, Privacy Pools compliance mode
 
@@ -54,7 +54,7 @@ Key variables:
 | `NEXT_PUBLIC_API_URL` | Frontend | FastAPI backend URL |
 | `NEXT_PUBLIC_WEBAUTHN_RP_ID` | Frontend | WebAuthn relying party ID |
 | `NEXT_PUBLIC_CHAIN_ID` | Frontend | EVM chain (1 = mainnet, 11155111 = Sepolia) |
-| `OPENAI_API_KEY` | Backend | GPT-4o-mini for chat + intent parsing |
+| `ANTHROPIC_API_KEY` | Backend | Claude Haiku for chat + intent parsing |
 | `GROK_API_KEY` | Backend | Grok for social sentiment analysis |
 | `ETH_RPC_URL` | Backend | Ethereum mainnet JSON-RPC endpoint |
 | `SEPOLIA_RPC_URL` | Backend | Sepolia testnet JSON-RPC endpoint |

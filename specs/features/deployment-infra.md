@@ -42,7 +42,7 @@ User → Firebase Hosting (PWA) → /api/** rewrite → Cloud Run (FastAPI)
 |--------|---------|
 | ETH_RPC_URL | Ethereum mainnet RPC |
 | SEPOLIA_RPC_URL | Sepolia testnet RPC |
-| OPENAI_API_KEY | OpenAI for AI chat |
+| ANTHROPIC_API_KEY | Anthropic Claude for AI chat |
 | GROK_API_KEY | Grok for social sentiment |
 ## Configuration
 | Variable | Description | Required |

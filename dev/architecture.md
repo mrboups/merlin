@@ -64,7 +64,7 @@ merlin/
       signals.py                Social signal read/write
       challenges.py             WebAuthn challenge store (5-min TTL)
     services/
-      chat.py                   OpenAI streaming with function calling (GPT-4o-mini)
+      chat.py                   Claude streaming with tool use (Claude Haiku)
       xstock.py                 61+ xStock token registry + fuzzy matching
       guardrails.py             8 pre-trade safety checks
       uniswap.py                Uniswap V3 quoting + swap calldata (raw ABI)
@@ -165,7 +165,7 @@ Backend:
   | 1. get_current_user() — verify JWT
   | 2. Load conversation history from Firestore
   | 3. Build system prompt (persona config + wallet context)
-  | 4. Call OpenAI GPT-4o-mini with function definitions:
+  | 4. Call Claude Haiku with tool definitions:
   |      execute_trade(asset, side, amount, currency, privacy_mode)
   |      get_portfolio()
   |      get_price(symbol)
@@ -175,7 +175,7 @@ Backend:
   |      event: delta
   |      data: {"content": "Let me check..."}
   |
-  | If OpenAI calls execute_trade function:
+  | If Claude calls execute_trade tool:
   |   a. Resolve xStock token (fuzzy match via xstock.py)
   |   b. Run 8 guardrail checks (guardrails.py)
   |        - Amount within limits ($10–$10,000)
@@ -288,9 +288,9 @@ Private keys are generated, stored, and used exclusively in the browser. The Fas
 
 The backend cannot reconstruct a private key. If the backend were compromised, no user funds would be at risk.
 
-### OpenAI Function Calling Over Regex Parsing
+### Claude Tool Use Over Regex Parsing
 
-Trade intents are parsed by GPT-4o-mini using structured function calling, not regex. This handles:
+Trade intents are parsed by Claude Haiku using structured tool use, not regex. This handles:
 - Natural language variations: "buy a hundred bucks of Apple" → `{asset: "AAPL", amount: 100, currency: "USD", side: "buy"}`
 - Ambiguous references: "the stock we discussed earlier" resolved via conversation history
 - Multi-step intents: "sell half my Tesla and buy Nvidia with the proceeds"

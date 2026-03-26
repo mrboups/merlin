@@ -15,7 +15,7 @@ Detailed specifications for each major feature of the Merlin platform.
 | Feature | Status | Spec |
 |---------|--------|------|
 | [Passkey Authentication](auth-passkey.md) | Live | WebAuthn passkeys, seed encryption, session management |
-| [AI Chat Pipeline](ai-chat-pipeline.md) | Live | OpenAI function calling, SSE streaming, intent parsing |
+| [AI Chat Pipeline](ai-chat-pipeline.md) | Live | Claude tool use, SSE streaming, intent parsing |
 | [Trading Engine](trading-engine.md) | Live (quoting) / In Progress (execution) | Uniswap V3 quotes, swap building, 6-step pipeline |
 | [xStock Resolver](xstock-resolver.md) | Live | 61+ token registry, fuzzy matching, price oracle |
 | [Privacy System](privacy-railgun.md) | Planned | Railgun ZK proofs, Privacy Pools, three transaction modes |
@@ -28,7 +28,7 @@ Detailed specifications for each major feature of the Merlin platform.
 ## Architecture Overview
 
 ```
-User → Chat UI → OpenAI (function calling) → Intent Parser
+User → Chat UI → Anthropic Claude (tool use) → Intent Parser
                                                   ↓
                                           xStock Resolver → Guardrails → Trading Engine
                                                                               ↓

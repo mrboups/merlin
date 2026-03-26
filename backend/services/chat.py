@@ -1,9 +1,9 @@
 """
-AI Chat Service — OpenAI GPT-4o-mini with function calling.
+AI Chat Service — Anthropic Claude Haiku with tool use.
 
 Handles:
   - Streaming chat responses via SSE
-  - Function calling for trade intent parsing, price queries, portfolio queries
+  - Tool use for trade intent parsing, price queries, portfolio queries
   - Trade intent resolution via xStock resolver
   - Guardrail validation on every parsed trade
   - Conversation history persistence in Firestore
@@ -16,7 +16,7 @@ import logging
 import os
 from typing import AsyncGenerator
 
-from openai import AsyncOpenAI
+import anthropic
 
 from db.conversations import add_message, create_conversation, get_messages
 from db.trades import save_quoted_trade
@@ -36,31 +36,31 @@ from db.users import get_user_by_id
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# OpenAI client
+# Anthropic client
 # ---------------------------------------------------------------------------
 
-_client: AsyncOpenAI | None = None
+_client: anthropic.AsyncAnthropic | None = None
 
 
-def _get_client() -> AsyncOpenAI:
+def _get_client() -> anthropic.AsyncAnthropic:
     global _client
     if _client is None:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY environment variable is not set.")
-        _client = AsyncOpenAI(api_key=api_key)
+            raise RuntimeError("ANTHROPIC_API_KEY environment variable is not set.")
+        _client = anthropic.AsyncAnthropic(api_key=api_key)
     return _client
 
 
-MODEL = "gpt-4o-mini"
+MODEL = "claude-haiku-4-5-20251001"
 
 SYSTEM_PROMPT = """\
 You are Merlin, an AI trading assistant for a privacy-preserving non-custodial Ethereum wallet.
 You help users trade tokenized stock tracker certificates (xStocks) and crypto on Ethereum.
 
-When a user wants to trade, extract the intent and call the parse_trade_intent function.
-When a user asks about prices, call the get_price function.
-When a user asks about their portfolio, call the get_portfolio function.
+When a user wants to trade, extract the intent and call the parse_trade_intent tool.
+When a user asks about prices, call the get_price tool.
+When a user asks about their portfolio, call the get_portfolio tool.
 
 Important rules:
 - Be concise, helpful, and never give financial advice.
@@ -78,62 +78,53 @@ xGLD (Gold), and 50+ more.
 
 TOOLS = [
     {
-        "type": "function",
-        "function": {
-            "name": "parse_trade_intent",
-            "description": "Parse a user's trade request into a structured intent. Call this when the user wants to buy or sell an asset.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "side": {
-                        "type": "string",
-                        "enum": ["buy", "sell"],
-                        "description": "Whether the user wants to buy or sell.",
-                    },
-                    "asset": {
-                        "type": "string",
-                        "description": "The asset name or symbol (e.g., Tesla, TSLA, xTSLA, ETH).",
-                    },
-                    "amount": {
-                        "type": "number",
-                        "description": "Dollar amount or token quantity.",
-                    },
-                    "amount_type": {
-                        "type": "string",
-                        "enum": ["usd", "quantity"],
-                        "description": "Whether the amount is in USD or token quantity.",
-                    },
+        "name": "parse_trade_intent",
+        "description": "Parse a user's trade request into a structured intent. Call this when the user wants to buy or sell an asset.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "side": {
+                    "type": "string",
+                    "enum": ["buy", "sell"],
+                    "description": "Whether the user wants to buy or sell.",
                 },
-                "required": ["side", "asset", "amount", "amount_type"],
+                "asset": {
+                    "type": "string",
+                    "description": "The asset name or symbol (e.g., Tesla, TSLA, xTSLA, ETH).",
+                },
+                "amount": {
+                    "type": "number",
+                    "description": "Dollar amount or token quantity.",
+                },
+                "amount_type": {
+                    "type": "string",
+                    "enum": ["usd", "quantity"],
+                    "description": "Whether the amount is in USD or token quantity.",
+                },
             },
+            "required": ["side", "asset", "amount", "amount_type"],
         },
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_price",
-            "description": "Get the current price of an asset. Call this when the user asks about a price.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "asset": {
-                        "type": "string",
-                        "description": "The asset name or symbol.",
-                    },
+        "name": "get_price",
+        "description": "Get the current price of an asset. Call this when the user asks about a price.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "asset": {
+                    "type": "string",
+                    "description": "The asset name or symbol.",
                 },
-                "required": ["asset"],
             },
+            "required": ["asset"],
         },
     },
     {
-        "type": "function",
-        "function": {
-            "name": "get_portfolio",
-            "description": "Get the user's current portfolio and positions. Call this when the user asks about their portfolio, balance, or holdings.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-            },
+        "name": "get_portfolio",
+        "description": "Get the user's current portfolio and positions. Call this when the user asks about their portfolio, balance, or holdings.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
         },
     },
 ]
@@ -170,73 +161,88 @@ async def chat(
     # Persist user message
     await add_message(user_id, conversation_id, role="user", content=message)
 
-    # Build message history for OpenAI
-    history = await _build_openai_messages(user_id, conversation_id)
+    # Build message history for Claude
+    messages = await _build_claude_messages(user_id, conversation_id)
 
     try:
-        # First call: may produce text or a function call
-        response = await client.chat.completions.create(
-            model=MODEL,
-            messages=history,
-            tools=TOOLS,
-            tool_choice="auto",
-            stream=True,
-        )
+        # Agentic loop: keep calling Claude until no more tool use
+        while True:
+            collected_text = ""
+            tool_use_blocks: list[dict] = []
 
-        collected_text = ""
-        tool_calls_data: dict[int, dict] = {}
+            async with client.messages.stream(
+                model=MODEL,
+                max_tokens=2048,
+                system=SYSTEM_PROMPT,
+                messages=messages,
+                tools=TOOLS,
+            ) as stream:
+                async for event in stream:
+                    if event.type == "content_block_start":
+                        if event.content_block.type == "tool_use":
+                            tool_use_blocks.append({
+                                "id": event.content_block.id,
+                                "name": event.content_block.name,
+                                "input_json": "",
+                            })
+                    elif event.type == "content_block_delta":
+                        if event.delta.type == "text_delta":
+                            collected_text += event.delta.text
+                            yield _sse({"type": "text", "content": event.delta.text})
+                        elif event.delta.type == "input_json_delta":
+                            if tool_use_blocks:
+                                tool_use_blocks[-1]["input_json"] += event.delta.partial_json
 
-        async for chunk in response:
-            delta = chunk.choices[0].delta if chunk.choices else None
-            if delta is None:
-                continue
-
-            finish_reason = chunk.choices[0].finish_reason
-
-            # Stream text content
-            if delta.content:
-                collected_text += delta.content
-                yield _sse({"type": "text", "content": delta.content})
-
-            # Accumulate tool call fragments
-            if delta.tool_calls:
-                for tc in delta.tool_calls:
-                    idx = tc.index
-                    if idx not in tool_calls_data:
-                        tool_calls_data[idx] = {
-                            "id": tc.id or "",
-                            "name": tc.function.name or "" if tc.function else "",
-                            "arguments": "",
-                        }
-                    if tc.id:
-                        tool_calls_data[idx]["id"] = tc.id
-                    if tc.function:
-                        if tc.function.name:
-                            tool_calls_data[idx]["name"] = tc.function.name
-                        if tc.function.arguments:
-                            tool_calls_data[idx]["arguments"] += tc.function.arguments
-
-            # Handle finish
-            if finish_reason == "tool_calls":
-                # Process each tool call
-                for idx in sorted(tool_calls_data.keys()):
-                    tc_info = tool_calls_data[idx]
-                    async for event in _handle_tool_call(
-                        client, user_id, conversation_id, history,
-                        tc_info, collected_text,
-                    ):
-                        yield event
-                # Reset for potential continuation
-                collected_text = ""
-                tool_calls_data = {}
-
-            elif finish_reason == "stop":
-                # Save assistant response
+            # If no tool use, we're done
+            if not tool_use_blocks:
                 if collected_text.strip():
                     await add_message(
                         user_id, conversation_id,
                         role="assistant", content=collected_text,
                     )
+                break
+
+            # Build the assistant message with all content blocks
+            assistant_content = []
+            if collected_text:
+                assistant_content.append({"type": "text", "text": collected_text})
+            for tb in tool_use_blocks:
+                try:
+                    tool_input = json.loads(tb["input_json"]) if tb["input_json"] else {}
+                except json.JSONDecodeError:
+                    tool_input = {}
+                assistant_content.append({
+                    "type": "tool_use",
+                    "id": tb["id"],
+                    "name": tb["name"],
+                    "input": tool_input,
+                })
+
+            messages.append({"role": "assistant", "content": assistant_content})
+
+            # Process each tool call and build tool results
+            tool_results = []
+            for tb in tool_use_blocks:
+                try:
+                    tool_input = json.loads(tb["input_json"]) if tb["input_json"] else {}
+                except json.JSONDecodeError:
+                    tool_input = {}
+
+                result, events = await _handle_tool_call(
+                    user_id, conversation_id, tb["name"], tb["id"], tool_input,
+                )
+                for ev in events:
+                    yield ev
+
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tb["id"],
+                    "content": result,
+                })
+
+            messages.append({"role": "user", "content": tool_results})
+
+            # Continue the loop — Claude will respond to the tool results
 
     except Exception as e:
         logger.exception("Chat error for user %s", user_id)
@@ -251,55 +257,35 @@ async def chat(
 
 
 async def _handle_tool_call(
-    client: AsyncOpenAI,
     user_id: str,
     conversation_id: str,
-    history: list[dict],
-    tool_call: dict,
-    preceding_text: str,
-) -> AsyncGenerator[str, None]:
-    """Handle a single function call from the model."""
-    name = tool_call["name"]
-    call_id = tool_call["id"]
-
-    try:
-        args = json.loads(tool_call["arguments"]) if tool_call["arguments"] else {}
-    except json.JSONDecodeError:
-        yield _sse({"type": "error", "content": f"Failed to parse function arguments for {name}."})
-        return
-
-    logger.info("Tool call: %s(%s)", name, json.dumps(args))
+    name: str,
+    call_id: str,
+    args: dict,
+) -> tuple[str, list[str]]:
+    """
+    Handle a single tool call. Returns (result_string, list_of_sse_events).
+    """
+    events: list[str] = []
 
     if name == "parse_trade_intent":
-        async for event in _handle_trade_intent(
-            client, user_id, conversation_id, history, call_id, args,
-        ):
-            yield event
-
+        result = await _handle_trade_intent(user_id, conversation_id, args, events)
     elif name == "get_price":
-        async for event in _handle_get_price(
-            client, user_id, conversation_id, history, call_id, args,
-        ):
-            yield event
-
+        result = await _handle_get_price(args)
     elif name == "get_portfolio":
-        async for event in _handle_get_portfolio(
-            client, user_id, conversation_id, history, call_id, args,
-        ):
-            yield event
-
+        result = await _handle_get_portfolio(user_id)
     else:
-        yield _sse({"type": "error", "content": f"Unknown function: {name}"})
+        result = json.dumps({"error": f"Unknown tool: {name}"})
+
+    return result, events
 
 
 async def _handle_trade_intent(
-    client: AsyncOpenAI,
     user_id: str,
     conversation_id: str,
-    history: list[dict],
-    call_id: str,
     args: dict,
-) -> AsyncGenerator[str, None]:
+    events: list[str],
+) -> str:
     """Resolve token, run guardrails, return trade confirmation."""
     side = args.get("side", "buy")
     asset_query = args.get("asset", "")
@@ -313,33 +299,21 @@ async def _handle_trade_intent(
     alternatives = resolution.get("alternatives", [])
 
     if not matched_token:
-        tool_result = json.dumps({
+        return json.dumps({
             "error": "asset_not_found",
             "message": f"Could not find an asset matching '{asset_query}'.",
             "suggestions": alternatives,
         })
-        async for event in _send_tool_result(
-            client, user_id, conversation_id, history, call_id,
-            "parse_trade_intent", args, tool_result,
-        ):
-            yield event
-        return
 
     # If ambiguous (low confidence), ask for clarification
     if confidence < 0.8 and alternatives:
         alt_names = ", ".join(alternatives)
-        tool_result = json.dumps({
+        return json.dumps({
             "error": "ambiguous_asset",
             "message": f"'{asset_query}' is ambiguous. Did you mean one of: {alt_names}?",
             "alternatives": alternatives,
             "confidence": confidence,
         })
-        async for event in _send_tool_result(
-            client, user_id, conversation_id, history, call_id,
-            "parse_trade_intent", args, tool_result,
-        ):
-            yield event
-        return
 
     symbol = matched_token["symbol"]
     asset_name = matched_token["name"]
@@ -357,17 +331,11 @@ async def _handle_trade_intent(
     guardrail_result = await validate_trade(user_id, intent)
 
     if not guardrail_result["approved"]:
-        tool_result = json.dumps({
+        return json.dumps({
             "error": "guardrail_blocked",
             "message": guardrail_result["reason"],
             "checks": guardrail_result["checks"],
         })
-        async for event in _send_tool_result(
-            client, user_id, conversation_id, history, call_id,
-            "parse_trade_intent", args, tool_result,
-        ):
-            yield event
-        return
 
     # Guardrails passed — attempt to get a real Uniswap quote
     uniswap_quote = None
@@ -376,8 +344,6 @@ async def _handle_trade_intent(
     estimated_output_symbol = None
 
     try:
-        # Determine swap pair: buying an asset means USDC -> asset,
-        # selling means asset -> USDC
         _crypto_by_symbol = {a["symbol"].upper(): a for a in CRYPTO_ASSETS}
 
         if side == "buy":
@@ -395,11 +361,9 @@ async def _handle_trade_intent(
             token_in_sym, token_out_sym, token_in_info, token_out_info,
         )
 
-        # Determine decimals for input token
         decimals_in = await get_token_decimals(addr_in)
         decimals_out = await get_token_decimals(addr_out)
 
-        # Convert amount to smallest unit
         if amount_type == "usd":
             amount_in_raw = int(amount * (10 ** decimals_in))
         else:
@@ -452,9 +416,9 @@ async def _handle_trade_intent(
     if quote_error:
         trade_data["quote_note"] = quote_error
 
-    yield _sse({"type": "trade_intent", "data": trade_data})
+    events.append(_sse({"type": "trade_intent", "data": trade_data}))
 
-    # Send result back to the model for a confirmation message
+    # Build tool result for Claude
     amount_display = f"${amount:,.2f}" if amount_type == "usd" else f"{amount} tokens"
     tool_result_data = {
         "success": True,
@@ -487,210 +451,114 @@ async def _handle_trade_intent(
             "Trade quoted. The frontend will handle signing and submission via /trade/quote."
         )
 
-    tool_result = json.dumps(tool_result_data)
-
-    async for event in _send_tool_result(
-        client, user_id, conversation_id, history, call_id,
-        "parse_trade_intent", args, tool_result,
-    ):
-        yield event
+    return json.dumps(tool_result_data)
 
 
-async def _handle_get_price(
-    client: AsyncOpenAI,
-    user_id: str,
-    conversation_id: str,
-    history: list[dict],
-    call_id: str,
-    args: dict,
-) -> AsyncGenerator[str, None]:
+async def _handle_get_price(args: dict) -> str:
     """Handle price query."""
     asset_query = args.get("asset", "")
     resolution = resolve_token(asset_query)
     matched_token = resolution.get("match")
 
     if not matched_token:
-        tool_result = json.dumps({
+        return json.dumps({
             "error": "asset_not_found",
             "message": f"Could not find an asset matching '{asset_query}'.",
         })
-    else:
-        symbol = matched_token["symbol"]
-        # Determine the ticker for the price oracle
-        # xStock symbols (e.g. xTSLA) map to Backed Finance tickers (e.g. TSLAx)
-        backed_ticker = matched_token.get("backed_ticker", "")
-        price_symbol = backed_ticker if backed_ticker and is_xstock(backed_ticker) else symbol
 
-        try:
-            price = await get_token_price(price_symbol)
-            if price is not None:
-                tool_result = json.dumps({
-                    "asset": matched_token["name"],
-                    "symbol": symbol,
-                    "price_usd": round(price, 2),
-                    "source": "backed_finance" if is_xstock(price_symbol) else "coinmarketcap",
-                })
-            else:
-                tool_result = json.dumps({
-                    "asset": matched_token["name"],
-                    "symbol": symbol,
-                    "error": "price_unavailable",
-                    "message": f"Price data for {matched_token['name']} ({symbol}) is temporarily unavailable.",
-                })
-        except Exception as e:
-            logger.warning("Price fetch failed for %s: %s", symbol, e)
-            tool_result = json.dumps({
+    symbol = matched_token["symbol"]
+    backed_ticker = matched_token.get("backed_ticker", "")
+    price_symbol = backed_ticker if backed_ticker and is_xstock(backed_ticker) else symbol
+
+    try:
+        price = await get_token_price(price_symbol)
+        if price is not None:
+            return json.dumps({
                 "asset": matched_token["name"],
                 "symbol": symbol,
-                "error": "price_error",
-                "message": f"Could not fetch price for {matched_token['name']}: {e}",
+                "price_usd": round(price, 2),
+                "source": "backed_finance" if is_xstock(price_symbol) else "coinmarketcap",
             })
+        else:
+            return json.dumps({
+                "asset": matched_token["name"],
+                "symbol": symbol,
+                "error": "price_unavailable",
+                "message": f"Price data for {matched_token['name']} ({symbol}) is temporarily unavailable.",
+            })
+    except Exception as e:
+        logger.warning("Price fetch failed for %s: %s", symbol, e)
+        return json.dumps({
+            "asset": matched_token["name"],
+            "symbol": symbol,
+            "error": "price_error",
+            "message": f"Could not fetch price for {matched_token['name']}: {e}",
+        })
 
-    async for event in _send_tool_result(
-        client, user_id, conversation_id, history, call_id,
-        "get_price", args, tool_result,
-    ):
-        yield event
 
-
-async def _handle_get_portfolio(
-    client: AsyncOpenAI,
-    user_id: str,
-    conversation_id: str,
-    history: list[dict],
-    call_id: str,
-    args: dict,
-) -> AsyncGenerator[str, None]:
+async def _handle_get_portfolio(user_id: str) -> str:
     """Handle portfolio query — fetches real on-chain balances and live prices."""
     try:
         user = await get_user_by_id(user_id)
         address = user.get("address", "") if user else ""
 
         if not address:
-            tool_result = json.dumps({
+            return json.dumps({
                 "total_value": 0,
                 "positions": [],
                 "message": "No wallet address found. Create or import a wallet first.",
             })
-        else:
-            # Known ERC-20 tokens to scan (same list as portfolio router)
-            known_tokens = [
-                {"symbol": "USDC", "name": "USD Coin", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "decimals": 6},
-                {"symbol": "USDT", "name": "Tether", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "decimals": 6},
-                {"symbol": "WETH", "name": "Wrapped Ether", "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "decimals": 18},
-            ]
 
-            balances = await get_all_balances(address, known_tokens)
+        known_tokens = [
+            {"symbol": "USDC", "name": "USD Coin", "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", "decimals": 6},
+            {"symbol": "USDT", "name": "Tether", "address": "0xdAC17F958D2ee523a2206206994597C13D831ec7", "decimals": 6},
+            {"symbol": "WETH", "name": "Wrapped Ether", "address": "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "decimals": 18},
+        ]
 
-            if not balances:
-                tool_result = json.dumps({
-                    "address": address,
-                    "total_value": 0,
-                    "positions": [],
-                    "message": "No token balances found for this wallet.",
-                })
-            else:
-                from services.prices import get_prices_batch
+        balances = await get_all_balances(address, known_tokens)
 
-                symbols = [b["symbol"] for b in balances]
-                prices = await get_prices_batch(symbols)
+        if not balances:
+            return json.dumps({
+                "address": address,
+                "total_value": 0,
+                "positions": [],
+                "message": "No token balances found for this wallet.",
+            })
 
-                positions = []
-                total_value = 0.0
-                for bal in balances:
-                    sym = bal["symbol"]
-                    qty = bal["balance"]
-                    price = prices.get(sym)
-                    value = round(qty * price, 2) if price else None
-                    positions.append({
-                        "asset": bal["name"],
-                        "symbol": sym,
-                        "quantity": round(qty, 8),
-                        "price_usd": round(price, 2) if price else None,
-                        "value": value,
-                    })
-                    if value:
-                        total_value += value
+        from services.prices import get_prices_batch
 
-                tool_result = json.dumps({
-                    "address": address,
-                    "total_value": round(total_value, 2),
-                    "positions": positions,
-                })
+        symbols = [b["symbol"] for b in balances]
+        prices = await get_prices_batch(symbols)
+
+        positions = []
+        total_value = 0.0
+        for bal in balances:
+            sym = bal["symbol"]
+            qty = bal["balance"]
+            price = prices.get(sym)
+            value = round(qty * price, 2) if price else None
+            positions.append({
+                "asset": bal["name"],
+                "symbol": sym,
+                "quantity": round(qty, 8),
+                "price_usd": round(price, 2) if price else None,
+                "value": value,
+            })
+            if value:
+                total_value += value
+
+        return json.dumps({
+            "address": address,
+            "total_value": round(total_value, 2),
+            "positions": positions,
+        })
 
     except Exception as e:
         logger.warning("Portfolio fetch failed for user %s: %s", user_id, e)
-        tool_result = json.dumps({
+        return json.dumps({
             "error": "portfolio_error",
             "message": f"Could not fetch portfolio: {e}",
         })
-
-    async for event in _send_tool_result(
-        client, user_id, conversation_id, history, call_id,
-        "get_portfolio", args, tool_result,
-    ):
-        yield event
-
-
-# ---------------------------------------------------------------------------
-# Send tool result back to the model and stream the response
-# ---------------------------------------------------------------------------
-
-
-async def _send_tool_result(
-    client: AsyncOpenAI,
-    user_id: str,
-    conversation_id: str,
-    history: list[dict],
-    call_id: str,
-    function_name: str,
-    function_args: dict,
-    result: str,
-) -> AsyncGenerator[str, None]:
-    """
-    Send a tool result back to OpenAI and stream the model's follow-up response.
-    """
-    # Build updated message list with the assistant's tool call and our result
-    updated = list(history)
-    updated.append({
-        "role": "assistant",
-        "tool_calls": [
-            {
-                "id": call_id,
-                "type": "function",
-                "function": {
-                    "name": function_name,
-                    "arguments": json.dumps(function_args),
-                },
-            }
-        ],
-    })
-    updated.append({
-        "role": "tool",
-        "tool_call_id": call_id,
-        "content": result,
-    })
-
-    response = await client.chat.completions.create(
-        model=MODEL,
-        messages=updated,
-        stream=True,
-    )
-
-    collected = ""
-    async for chunk in response:
-        delta = chunk.choices[0].delta if chunk.choices else None
-        if delta and delta.content:
-            collected += delta.content
-            yield _sse({"type": "text", "content": delta.content})
-
-    # Save assistant response
-    if collected.strip():
-        await add_message(
-            user_id, conversation_id,
-            role="assistant", content=collected,
-            metadata={"function_call": function_name},
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -698,21 +566,19 @@ async def _send_tool_result(
 # ---------------------------------------------------------------------------
 
 
-async def _build_openai_messages(user_id: str, conversation_id: str) -> list[dict]:
+async def _build_claude_messages(user_id: str, conversation_id: str) -> list[dict]:
     """
-    Build the OpenAI messages array from conversation history.
+    Build the Claude messages array from conversation history.
 
-    Includes the system prompt and up to 50 recent messages.
+    Includes up to 50 recent messages. System prompt is passed separately.
     """
-    messages: list[dict] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-    ]
+    messages: list[dict] = []
 
     stored = await get_messages(user_id, conversation_id, limit=50)
     for msg in stored:
         role = msg.get("role", "user")
         content = msg.get("content", "")
-        if role in ("user", "assistant", "system"):
+        if role in ("user", "assistant"):
             messages.append({"role": role, "content": content})
 
     return messages
