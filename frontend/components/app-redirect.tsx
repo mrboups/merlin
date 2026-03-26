@@ -1,20 +1,18 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { showWaitlist } from "@/lib/waitlist";
 
 /**
- * Redirects to /chat when accessed via app.letmerlincook.com.
- * This allows the app subdomain to go straight to the trading chat.
+ * When accessed via app.letmerlincook.com, show the waitlist overlay
+ * instead of redirecting to /chat (waitlist phase).
  */
 export function AppRedirect() {
-  const router = useRouter();
-
   useEffect(() => {
     if (typeof window !== "undefined" && window.location.hostname.startsWith("app.")) {
-      router.replace("/chat");
+      showWaitlist();
     }
-  }, [router]);
+  }, []);
 
   return null;
 }

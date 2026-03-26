@@ -1,6 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { ArrowRight, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { showWaitlist } from "@/lib/waitlist";
+import { trackEvent } from "@/lib/track";
 
 export function Hero() {
   return (
@@ -45,14 +49,12 @@ export function Hero() {
 
             <div className="flex flex-wrap gap-4">
               <Button
-                asChild
                 size="lg"
+                onClick={() => { trackEvent("cta_click", "hero"); showWaitlist(); }}
                 className="bg-[#00d4aa] hover:bg-[#00bfa0] text-black font-semibold gap-2 text-base px-8"
               >
-                <Link href="/chat">
-                  Start Trading
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
+                Start Trading
+                <ArrowRight className="h-4 w-4" />
               </Button>
               <Button
                 asChild

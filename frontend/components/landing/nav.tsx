@@ -6,6 +6,8 @@ import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { showWaitlist } from "@/lib/waitlist";
+import { trackEvent } from "@/lib/track";
 
 const links = [
   { label: "Features", href: "#features" },
@@ -58,8 +60,12 @@ export function LandingNav() {
 
           {/* Desktop CTA */}
           <div className="hidden md:flex items-center gap-3">
-            <Button asChild size="sm" className="bg-[#00d4aa] hover:bg-[#00bfa0] text-black font-semibold">
-              <Link href="/chat">Launch App</Link>
+            <Button
+              size="sm"
+              onClick={() => { trackEvent("cta_click", "nav"); showWaitlist(); }}
+              className="bg-[#00d4aa] hover:bg-[#00bfa0] text-black font-semibold"
+            >
+              Launch App
             </Button>
           </div>
 
@@ -88,8 +94,12 @@ export function LandingNav() {
                 {link.label}
               </a>
             ))}
-            <Button asChild size="sm" className="bg-[#00d4aa] hover:bg-[#00bfa0] text-black font-semibold w-full mt-2">
-              <Link href="/chat" onClick={handleNavClick}>Launch App</Link>
+            <Button
+              size="sm"
+              onClick={() => { handleNavClick(); trackEvent("cta_click", "nav_mobile"); showWaitlist(); }}
+              className="bg-[#00d4aa] hover:bg-[#00bfa0] text-black font-semibold w-full mt-2"
+            >
+              Launch App
             </Button>
           </nav>
         </div>

@@ -1,6 +1,9 @@
-import Link from "next/link";
+"use client";
+
 import { ArrowRight, Fingerprint } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { showWaitlist } from "@/lib/waitlist";
+import { trackEvent } from "@/lib/track";
 
 export function CtaSection() {
   return (
@@ -32,14 +35,12 @@ export function CtaSection() {
         </p>
 
         <Button
-          asChild
           size="lg"
+          onClick={() => { trackEvent("cta_click", "cta_section"); showWaitlist(); }}
           className="bg-gradient-to-r from-[#00d4aa] to-[#00bfa0] hover:from-[#00bfa0] hover:to-[#00a891] text-black font-bold gap-2 text-lg px-10 py-6 h-auto shadow-lg shadow-[#00d4aa]/20"
         >
-          <Link href="/chat">
-            Open Merlin
-            <ArrowRight className="h-5 w-5" />
-          </Link>
+          Open Merlin
+          <ArrowRight className="h-5 w-5" />
         </Button>
 
         {/* Reassurance row */}
