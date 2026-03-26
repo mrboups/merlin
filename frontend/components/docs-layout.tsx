@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
 import { DocsNav } from "@/components/docs-nav";
 
@@ -30,10 +31,10 @@ export function DocsLayout({
           <div className="flex h-14 items-center gap-4">
             <Link
               href="/"
-              className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
-              Back to Merlin
+              <Image src="/logo-white.svg" alt="Merlin" width={90} height={28} />
             </Link>
             <span className="text-white/20">|</span>
             <span className="text-sm font-medium text-foreground">

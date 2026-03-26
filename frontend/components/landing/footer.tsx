@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Wallet } from "lucide-react";
+import Image from "next/image";
 
 const footerLinks = [
   {
@@ -38,11 +38,8 @@ export function Footer() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-12">
           {/* Brand column */}
           <div className="col-span-2 lg:col-span-1">
-            <Link href="/" className="flex items-center gap-2 mb-4">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#00d4aa] to-[#0094ff]">
-                <Wallet className="h-4 w-4 text-white" />
-              </div>
-              <span className="text-lg font-bold">Merlin</span>
+            <Link href="/" className="flex items-center mb-4">
+              <Image src="/logo-white.svg" alt="Merlin" width={120} height={37} />
             </Link>
             <p className="text-sm text-muted-foreground leading-relaxed mb-4">
               Privacy-preserving non-custodial wallet for tokenized stocks and crypto.

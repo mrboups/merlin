@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useState } from "react";
-import { Menu, X, Wallet } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -38,11 +39,8 @@ export function LandingNav() {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href="/" className="flex items-center gap-2 group">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-[#00d4aa] to-[#0094ff]">
-              <Wallet className="h-4 w-4 text-white" />
-            </div>
-            <span className="text-lg font-bold tracking-tight">Merlin</span>
+          <Link href="/" className="flex items-center group">
+            <Image src="/logo-white.svg" alt="Merlin" width={120} height={37} priority />
           </Link>
 
           {/* Desktop nav links */}

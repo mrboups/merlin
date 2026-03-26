@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { useQuery } from "@tanstack/react-query";
@@ -11,7 +12,6 @@ import {
   Users,
   Settings,
   LogOut,
-  Wallet,
   ArrowUpRight,
   Radio,
   TrendingUp,
@@ -232,9 +232,8 @@ export function NavSidebar() {
     <>
       {/* Mobile top bar — logo + actions + balance (no burger) */}
       <div className="fixed top-0 left-0 right-0 z-50 flex h-14 items-center justify-between border-b bg-background px-4 md:hidden">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <Wallet className="h-5 w-5 text-primary" />
-          <span className="font-bold">Merlin</span>
+        <Link href="/dashboard" className="flex items-center">
+          <Image src="/logo-white.svg" alt="Merlin" width={100} height={31} />
         </Link>
         <div className="flex items-center gap-1">
           {actionButtons(true)}
@@ -246,9 +245,8 @@ export function NavSidebar() {
       <aside className="fixed left-0 top-0 z-40 hidden md:flex h-full w-64 flex-col border-r bg-background">
         {/* Logo + balance + actions */}
         <div className="border-b px-6 py-3">
-          <div className="flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-primary" />
-            <span className="font-bold text-lg">Merlin</span>
+          <div className="flex items-center">
+            <Image src="/logo-white.svg" alt="Merlin" width={120} height={37} />
           </div>
           <div className="mt-2">
             {balanceWidget(false)}
