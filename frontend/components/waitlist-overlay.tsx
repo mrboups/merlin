@@ -66,7 +66,7 @@ export function WaitlistOverlay({ onClose }: WaitlistOverlayProps) {
         setSubmitState("success");
         trackEvent("waitlist_email_submit", "overlay", { email: trimmed });
         // Auto-close after 3 s
-        setTimeout(() => onClose(), 3000);
+        setTimeout(() => onClose(), 5000);
       } catch (err) {
         setErrorMessage(err instanceof Error ? err.message : "Something went wrong.");
         setSubmitState("error");
