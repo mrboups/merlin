@@ -102,7 +102,7 @@ export function WaitlistOverlay({ onClose }: WaitlistOverlayProps) {
 
         {/* Headline */}
         <div className="text-center mb-8">
-          <h2 className="text-2xl font-bold tracking-tight mb-2">Join the waitlist before we open the gates</h2>
+          <h2 className="text-2xl font-bold tracking-tight mb-2">Join the waitlist</h2>
           <p className="text-sm text-muted-foreground">
             Join the community and be the first to trade stocks by chatting.
           </p>
